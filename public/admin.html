@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bridge Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+<!-- ── Login ── -->
+<div class="login-wrap" id="loginView">
+  <div class="login-box">
+    <h1>Bridge Control</h1>
+    <p>Authenticate with your admin key to manage API keys, monitor usage, and configure limits.</p>
+    <div class="field">
+      <label>Admin Key</label>
+      <input type="password" id="adminKeyInput" placeholder="Enter admin key..." autofocus>
+      <div class="error-msg" id="loginError"></div>
+    </div>
+    <button class="btn btn-primary btn-full" id="loginBtn">Authenticate</button>
+  </div>
+</div>
+
+<!-- ── Dashboard ── -->
+<div class="dashboard" id="dashboardView">
+  <div class="topbar">
+    <div class="topbar-left">
+      <h1>Bridge Control</h1>
+      <div class="status"><span class="status-dot"></span> Live</div>
+    </div>
+    <div class="topbar-right">
+      <span class="status" id="refreshTimer">Refresh in 30s</span>
+      <button class="btn btn-sm" id="refreshBtn">Refresh</button>
+      <button class="btn btn-sm" id="logoutBtn">Logout</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="stats" id="statsRow"></div>
+
+    <div class="section-header">
+      <h2>API Keys</h2>
+      <button class="btn btn-primary btn-sm" id="createKeyBtn">+ Create Key</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Limits</th>
+            <th>Today</th>
+            <th>This Month</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="keyTableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="section-header" style="margin-top: 36px;">
+      <h2>Request Logs</h2>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <select id="logKeyFilter" class="log-filter-select">
+          <option value="">All Keys</option>
+        </select>
+        <select id="logLimitFilter" class="log-filter-select">
+          <option value="25">25</option>
+          <option value="50" selected>50</option>
+          <option value="100">100</option>
+          <option value="200">200</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Key</th>
+            <th>Provider</th>
+            <th>Model</th>
+            <th>System Prompt</th>
+            <th>User Prompt</th>
+            <th>Tokens</th>
+            <th>Cost</th>
+            <th>Duration</th>
+          </tr>
+        </thead>
+        <tbody id="logTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal ── -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<!-- ── Toasts ── -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script src="admin.js"></script>
+</body>
+</html>
