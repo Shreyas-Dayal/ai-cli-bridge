@@ -143,6 +143,13 @@ adminRouter.post('/keys/:name/reset-usage', (req, res) => {
   res.json({ message: `Usage reset for "${req.params.name}"` });
 });
 
+// Get request logs
+adminRouter.get('/logs', (req, res) => {
+  const keyName = typeof req.query.key === 'string' ? req.query.key : undefined;
+  const limit = Math.min(Number(req.query.limit) || 50, 500);
+  res.json({ logs: keyManager.getLogs(keyName, limit) });
+});
+
 app.use('/admin', adminRouter);
 
 // ── User routes (per-user key auth) ──────────────────────────────────────────
@@ -213,7 +220,20 @@ app.post('/generate', async (req, res) => {
       keyManager.recordUsage(req.keyHash, result.usage.input_tokens, result.usage.output_tokens, result.cost_usd);
     }
 
-    logRequest('Claude', model || config.claudeDefaultModel, req.keyName, result.usage, result.cost_usd, result.duration_ms);
+    const usedModel = model || config.claudeDefaultModel;
+    keyManager.logRequest({
+      keyName: req.keyName || 'anonymous',
+      provider: 'claude',
+      model: usedModel,
+      systemPrompt: systemPrompt,
+      userPrompt: userPrompt,
+      inputTokens: result.usage.input_tokens,
+      outputTokens: result.usage.output_tokens,
+      costUsd: result.cost_usd,
+      durationMs: result.duration_ms || 0,
+    });
+
+    logRequest('Claude', usedModel, req.keyName, result.usage, result.cost_usd, result.duration_ms);
     res.json(result);
   } catch {
     res.status(500).json({ error: 'Generation failed' });
@@ -244,7 +264,20 @@ app.post('/generate-codex', async (req, res) => {
       keyManager.recordUsage(req.keyHash, result.usage.input_tokens, result.usage.output_tokens, result.cost_usd);
     }
 
-    logRequest('Codex', model || config.codexDefaultModel, req.keyName, result.usage, result.cost_usd);
+    const usedModel = model || config.codexDefaultModel;
+    keyManager.logRequest({
+      keyName: req.keyName || 'anonymous',
+      provider: 'codex',
+      model: usedModel,
+      systemPrompt: systemPrompt,
+      userPrompt: userPrompt,
+      inputTokens: result.usage.input_tokens,
+      outputTokens: result.usage.output_tokens,
+      costUsd: result.cost_usd,
+      durationMs: 0,
+    });
+
+    logRequest('Codex', usedModel, req.keyName, result.usage, result.cost_usd);
     res.json(result);
   } catch {
     res.status(500).json({ error: 'Generation failed' });
@@ -269,5 +302,6 @@ app.listen(config.port, () => {
   console.log('    GET    /admin/keys/:name    — Key usage details');
   console.log('    PATCH  /admin/keys/:name    — Update limits');
   console.log('    DELETE /admin/keys/:name    — Revoke key');
-  console.log('    POST   /admin/keys/:name/reset-usage\n');
+  console.log('    POST   /admin/keys/:name/reset-usage');
+  console.log('    GET    /admin/logs              — Request logs\n');
 });
