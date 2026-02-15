@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import { join } from 'path';
 import { config } from './config.js';
 import { KeyManager } from './keys.js';
 import { keyAuthMiddleware, adminAuthMiddleware } from './middleware/auth.js';
@@ -51,6 +52,9 @@ app.use(rateLimit({
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
+
+// ── Admin dashboard (static, unauthenticated — the page itself has no secrets) ─
+app.use('/admin/dashboard', express.static(join(process.cwd(), 'public')));
 
 // ── Admin routes (admin key auth) ────────────────────────────────────────────
 
