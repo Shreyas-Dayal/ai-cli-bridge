@@ -1,0 +1,18 @@
+# Cloudflare Tunnel config
+# Copy to ~/.cloudflared/config.yml after creating the tunnel
+#
+# Setup:
+#   cloudflared tunnel login
+#   cloudflared tunnel create ai-bridge
+#   cloudflared tunnel route dns ai-bridge bridge.yourdomain.com
+#   cp cloudflared-config.yml ~/.cloudflared/config.yml
+#   # Edit tunnel ID below
+#   cloudflared tunnel run ai-bridge
+
+tunnel: <YOUR_TUNNEL_ID>
+credentials-file: /root/.cloudflared/<YOUR_TUNNEL_ID>.json
+
+ingress:
+  - hostname: bridge.yourdomain.com
+    service: http://localhost:3456
+  - service: http_status:404
