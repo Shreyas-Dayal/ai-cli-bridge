@@ -10,6 +10,7 @@ Turn your Claude Max / OpenAI Pro subscriptions into a private API endpoint that
 - [CLI Capability Matrix](#cli-capability-matrix)
 - [Project Structure](#project-structure)
 - [Security Measures](#security-measures)
+- [Key Management](#key-management)
 - [Step-by-Step Deployment](#step-by-step-deployment)
 - [Using the Bridge From Other Projects](#using-the-bridge-from-other-projects)
 - [API Reference](#api-reference)
@@ -46,7 +47,7 @@ The tradeoff: more infrastructure complexity in exchange for dramatically lower 
 ┌─────────────────────────────────────────────────────────────────┐
 │  Your Other Projects (web apps, plugins, scripts, etc.)         │
 │  fetch('https://bridge.yourdomain.com/generate', {              │
-│    headers: { Authorization: 'Bearer <BRIDGE_KEY>' },           │
+│    headers: { Authorization: 'Bearer <USER_KEY>' },             │
 │    body: { systemPrompt, userPrompt, model }                    │
 │  })                                                             │
 └────────────────────────────┬────────────────────────────────────┘
@@ -65,11 +66,10 @@ The tradeoff: more infrastructure complexity in exchange for dramatically lower 
 │  DigitalOcean Droplet ($4-6/mo)                                 │
 │  ┌───────────────────────────────────────────────────────────┐  │
 │  │  ai-cli-bridge (Express server, managed by PM2)           │  │
-│  │  - Bearer token auth (timing-safe comparison)             │  │
-│  │  - Rate limiting                                          │  │
-│  │  - Input validation                                       │  │
-│  │  - Security headers                                       │  │
-│  │  - Usage stats tracking                                   │  │
+│  │  - Per-user key auth (SHA-256 hashed, timing-safe)        │  │
+│  │  - Per-key usage limits (requests, tokens, cost)          │  │
+│  │  - Rate limiting, security headers, input validation      │  │
+│  │  - Admin API for key management                           │  │
 │  └──────────┬──────────────────────────┬─────────────────────┘  │
 │             │                          │                         │
 │             ▼                          ▼                         │
@@ -85,7 +85,7 @@ The tradeoff: more infrastructure complexity in exchange for dramatically lower 
 - **DigitalOcean Droplet ($4-6/mo):** The CLIs call remote APIs, so CPU/RAM needs are minimal. Cheapest tier works fine.
 - **Cloudflare Tunnel:** Eliminates the need to open any ports on the droplet. All traffic flows through Cloudflare's network. Free TLS, free DDoS protection, and a clean domain name.
 - **PM2:** Process manager that auto-restarts the server on crash and survives reboots via systemd integration.
-- **Express:** Minimal HTTP framework. The server is ~200 lines — just middleware, validation, and CLI invocation.
+- **Express:** Minimal HTTP framework. The server is ~260 lines — just middleware, validation, and CLI invocation.
 
 ### Why Not Docker in Production
 
@@ -118,13 +118,18 @@ Important to understand what you get (and don't get) using CLI vs API:
 ai-cli-bridge/
 ├── src/
 │   ├── server.ts              # Express app — security headers, CORS, rate
-│   │                          #   limiting, auth, routes, stats tracking
+│   │                          #   limiting, admin routes, generation routes
 │   ├── config.ts              # All settings loaded from environment variables
+│   ├── keys.ts                # KeyManager — SHA-256 hashed key storage, CRUD,
+│   │                          #   per-key usage tracking, limit enforcement
 │   ├── middleware/
-│   │   └── auth.ts            # Bearer token auth with timing-safe comparison
+│   │   └── auth.ts            # Per-user key auth + admin auth (timing-safe)
 │   └── providers/
 │       ├── claude.ts          # Claude Code CLI wrapper (execFile → promise)
 │       └── codex.ts           # Codex CLI wrapper (JSONL parsing)
+├── data/                      # Runtime data (gitignored)
+│   ├── keys.json              # SHA-256 hashes → key config + limits
+│   └── usage.json             # Per-key daily/monthly usage counters
 ├── Dockerfile                 # Container build (non-root user, dumb-init)
 ├── docker-compose.yml         # With health check + auth volume persistence
 ├── ecosystem.config.cjs       # PM2 process manager configuration
@@ -177,38 +182,53 @@ codex exec \
 
 ### What Was Implemented and Why
 
-#### 1. Timing-Safe Authentication
+#### 1. SHA-256 Hashed Key Storage
 
-**Problem:** Standard string comparison (`===`, `Array.includes()`) short-circuits on the first mismatched character. An attacker can measure response times to guess valid API keys character-by-character.
+**Problem:** Storing raw API keys on disk means a file leak exposes all keys.
 
-**Solution:** `crypto.timingSafeEqual()` compares all bytes regardless of where differences occur.
+**Solution:** Only SHA-256 hashes are stored in `data/keys.json`. Raw keys are shown once at creation time and never stored. Validation hashes the incoming key and compares against stored hashes using timing-safe comparison.
 
 ```typescript
-import { timingSafeEqual } from 'crypto';
+// On key creation — raw key returned to admin, only hash stored
+const rawKey = randomBytes(32).toString('hex');
+const keyHash = createHash('sha256').update(rawKey).digest('hex');
+this.keys.keys[keyHash] = { name, limits, ... };
 
-function constantTimeMatch(userKey: string, validKeys: string[]): boolean {
-  for (const validKey of validKeys) {
-    if (userKey.length === validKey.length) {
-      if (timingSafeEqual(Buffer.from(userKey), Buffer.from(validKey))) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
+// On validation — combined validate + limit check in single call
+validateAndCheck(rawKey: string): { name?: string; hash?: string; error?: string }
 ```
 
-#### 2. Temp File Permissions
+#### 2. Timing-Safe Authentication
+
+**Problem:** Standard string comparison (`===`) short-circuits on the first mismatched character. An attacker can measure response times to guess valid keys character-by-character.
+
+**Solution:** `crypto.timingSafeEqual()` compares all bytes regardless of where differences occur. Used for both user key and admin key validation.
+
+#### 3. Raw Key Never Stored on Request
+
+**Problem:** Attaching the raw API key to the Express `req` object (`req.rawKey`) means it persists in memory and could leak through error handlers, logging, or middleware.
+
+**Solution:** The `validateAndCheck()` method returns the SHA-256 hash, which is stored as `req.keyHash`. The raw key exists only as a local variable during auth and is discarded immediately.
+
+#### 4. File Corruption Resilience
+
+**Problem:** If `keys.json` or `usage.json` become corrupted (power loss during write, disk error), `JSON.parse()` throws and the server crashes on startup.
+
+**Solution:** Both files are loaded inside try-catch blocks. On parse failure, the server starts with empty data and logs a warning rather than crashing.
+
+#### 5. Usage Data Pruning
+
+**Problem:** Without cleanup, `usage.json` grows indefinitely as daily/monthly entries accumulate.
+
+**Solution:** On startup, entries older than 90 days (daily) or 12 months (monthly) are automatically pruned.
+
+#### 6. Temp File Permissions
 
 **Problem:** `writeFileSync()` defaults to mode `0o666` (world-readable). System prompts written to temp files could be read by other users on the system.
 
 **Solution:** Write with `mode: 0o600` (owner read/write only).
 
-```typescript
-writeFileSync(tmpFile, systemPrompt, { encoding: 'utf-8', mode: 0o600 });
-```
-
-#### 3. Error Message Sanitization
+#### 7. Error Message Sanitization
 
 **Problem:** Returning raw CLI error messages to clients leaks system paths, command arguments, and internal state.
 
@@ -219,39 +239,36 @@ writeFileSync(tmpFile, systemPrompt, { encoding: 'utf-8', mode: 0o600 });
 console.error('[claude] CLI execution failed');
 
 // Client-side: generic message
-reject(new Error('Claude generation failed'));
-
-// Route handler: never exposes err.message
 catch { res.status(500).json({ error: 'Generation failed' }); }
 ```
 
-#### 4. Security Headers
+#### 8. Security Headers
 
 Standard hardening headers applied to all responses:
 
 ```typescript
-res.setHeader('X-Content-Type-Options', 'nosniff');    // Prevent MIME sniffing
-res.setHeader('X-Frame-Options', 'DENY');               // Prevent clickjacking
+res.setHeader('X-Content-Type-Options', 'nosniff');
+res.setHeader('X-Frame-Options', 'DENY');
 res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
 res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
 ```
 
-#### 5. Input Validation
+#### 9. Input Validation
 
 All generation endpoints validate:
 - `systemPrompt` and `userPrompt` must be strings (prevents type confusion)
 - Maximum length enforced (500K chars — prevents memory exhaustion)
 - `model` parameter must be a string if provided
 
-#### 6. Rate Limiting
+#### 10. Rate Limiting + Trust Proxy
 
-`express-rate-limit` with configurable window and max requests. Prevents abuse and protects subscription usage caps.
+`express-rate-limit` with configurable window and max requests. `trust proxy` is set to `1` so rate limiting correctly identifies clients behind Cloudflare Tunnel (which sends `X-Forwarded-For`).
 
-#### 7. No Open Ports
+#### 11. No Open Ports
 
 Cloudflare Tunnel means the droplet has **zero open ports**. All traffic flows through Cloudflare's encrypted tunnel. Even if someone discovers the droplet's IP, there's nothing to connect to.
 
-#### 8. Process Isolation (Docker)
+#### 12. Process Isolation (Docker)
 
 The Dockerfile runs as a non-root `bridge` user with `dumb-init` for proper signal handling. Auth volumes are mapped to the non-root home directory.
 
@@ -259,7 +276,80 @@ The Dockerfile runs as a non-root `bridge` user with `dumb-init` for proper sign
 
 - **HTTPS on the server itself:** Not needed — Cloudflare Tunnel handles TLS termination. The server listens on HTTP internally, which is standard for reverse-proxy architectures.
 - **Model whitelisting:** Left flexible so new models work without code changes. The CLIs themselves enforce model access based on your subscription.
-- **Request logging to a database:** Overkill for a personal bridge. Console logs captured by PM2 are sufficient.
+- **Request logging to a database:** Overkill for a personal bridge. Console logs captured by PM2 are sufficient. Per-key usage is tracked in `usage.json`.
+
+---
+
+## Key Management
+
+The bridge supports multi-user access with per-key usage limits. An admin key (set via `BRIDGE_ADMIN_KEY` env var) controls key CRUD operations.
+
+### How It Works
+
+1. **Admin creates a user key** via `POST /admin/keys` with a name and optional limits
+2. The raw key is returned **once** — the admin gives it to the user
+3. Only the SHA-256 hash is stored on disk (`data/keys.json`)
+4. Each request validates the key, checks limits, and tracks usage
+5. Usage is tracked per-key with daily and monthly granularity
+
+### Limit Types
+
+All limits default to `0` (unlimited). You can mix and match any combination:
+
+| Limit | Field | Description |
+|---|---|---|
+| Requests per day | `maxRequestsPerDay` | Hard cap on daily request count |
+| Requests per month | `maxRequestsPerMonth` | Hard cap on monthly request count |
+| Tokens per month | `maxTokensPerMonth` | Combined input + output tokens per month |
+| Cost per day | `maxCostPerDay` | USD spend cap per day |
+| Cost per month | `maxCostPerMonth` | USD spend cap per month |
+
+### Usage Tracking
+
+Each request records:
+- **Request count** — incremented per call
+- **Token count** — input + output tokens combined
+- **Cost (USD)** — actual `cost_usd` from the provider response
+
+Usage is tracked in-memory and flushed to disk every 30 seconds. Old entries are pruned automatically (daily > 90 days, monthly > 12 months).
+
+### Auth-Disabled Mode
+
+If no keys exist in `data/keys.json`, auth is completely bypassed. This is useful for local development. Create your first key via the admin API to enable auth.
+
+### Example Workflows
+
+**Create a key with a $5/month cost cap:**
+```bash
+curl -X POST https://bridge.yourdomain.com/admin/keys \
+  -H "Authorization: Bearer <ADMIN_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"alice","maxCostPerMonth":5.00}'
+# → {"key":"abc123...","note":"Save this key — it cannot be retrieved again."}
+```
+
+**Create a key with request + cost limits:**
+```bash
+curl -X POST https://bridge.yourdomain.com/admin/keys \
+  -H "Authorization: Bearer <ADMIN_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"bob","maxRequestsPerDay":50,"maxCostPerMonth":10.00}'
+```
+
+**Check a user's usage:**
+```bash
+curl https://bridge.yourdomain.com/admin/keys/alice \
+  -H "Authorization: Bearer <ADMIN_KEY>"
+# → {"name":"alice","limits":{...},"usage":{"today":{...},"thisMonth":{...}}}
+```
+
+**Update limits on an existing key:**
+```bash
+curl -X PATCH https://bridge.yourdomain.com/admin/keys/alice \
+  -H "Authorization: Bearer <ADMIN_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"maxCostPerDay":1.00}'
+```
 
 ---
 
@@ -323,9 +413,8 @@ dpkg -i /tmp/cloudflared.deb && rm /tmp/cloudflared.deb
 From your local machine:
 
 ```bash
-rsync -avz --exclude node_modules --exclude dist --exclude .env \
-  -e "ssh -i ~/.ssh/<YOUR_KEY>" \
-  ./ai-cli-bridge/ root@<DROPLET_IP>:/opt/ai-cli-bridge/
+rsync -avz --exclude node_modules --exclude .env --exclude data \
+  ./ai-cli-bridge/ ai-bridge:/opt/ai-cli-bridge/
 ```
 
 On the droplet:
@@ -339,14 +428,15 @@ pnpm build
 ### 5. Configure Environment
 
 ```bash
-# Generate a secure bridge API key
-BRIDGE_KEY=$(openssl rand -hex 32)
-echo "Your bridge key: $BRIDGE_KEY"
+# Generate a secure admin key
+ADMIN_KEY=$(openssl rand -hex 32)
+echo "Your admin key: $ADMIN_KEY"
 
 # Create .env
 cat > /opt/ai-cli-bridge/.env << EOF
 PORT=3456
-BRIDGE_API_KEYS=$BRIDGE_KEY
+BRIDGE_ADMIN_KEY=$ADMIN_KEY
+DATA_DIR=/opt/ai-cli-bridge/data
 RATE_LIMIT_WINDOW_MS=60000
 RATE_LIMIT_MAX_REQUESTS=30
 CORS_ORIGINS=
@@ -357,7 +447,7 @@ EOF
 chmod 600 /opt/ai-cli-bridge/.env
 ```
 
-**Save the bridge key** — this is what your other projects will use.
+**Save the admin key** — this is used to manage user keys.
 
 ### 6. Authenticate the CLIs
 
@@ -413,22 +503,37 @@ EOF
 cloudflared service install
 ```
 
-### 9. Verify End-to-End
+### 9. Create Your First User Key
+
+```bash
+curl -X POST https://bridge.yourdomain.com/admin/keys \
+  -H "Authorization: Bearer <ADMIN_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"yourname","maxCostPerMonth":20.00}'
+```
+
+Save the returned key — give it to users or use it in your projects.
+
+### 10. Verify End-to-End
 
 From your local machine:
 
 ```bash
-# Health check
-curl -s https://bridge.yourdomain.com/health \
-  -H "Authorization: Bearer <YOUR_BRIDGE_KEY>"
+# Health check (unauthenticated)
+curl -s https://bridge.yourdomain.com/health
 # → {"status":"ok"}
 
-# Test generation
+# Test generation (with user key)
 curl -s https://bridge.yourdomain.com/generate-codex \
-  -H "Authorization: Bearer <YOUR_BRIDGE_KEY>" \
+  -H "Authorization: Bearer <USER_KEY>" \
   -H "Content-Type: application/json" \
   -d '{"systemPrompt":"Reply concisely.","userPrompt":"What is 2+2?"}'
-# → {"content":[{"type":"text","text":"4"}],"usage":{...}}
+# → {"content":[{"type":"text","text":"4"}],"usage":{...},"cost_usd":0.003}
+
+# Check usage
+curl -s https://bridge.yourdomain.com/admin/keys/yourname \
+  -H "Authorization: Bearer <ADMIN_KEY>"
+# → {"name":"yourname","limits":{...},"usage":{"today":{"requests":1,"tokens":9132,"costUsd":0.003},...}}
 ```
 
 ---
@@ -442,7 +547,7 @@ const response = await fetch('https://bridge.yourdomain.com/generate', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
-    'Authorization': 'Bearer <YOUR_BRIDGE_KEY>',
+    'Authorization': 'Bearer <USER_KEY>',
   },
   body: JSON.stringify({
     systemPrompt: 'You are a helpful assistant.',
@@ -460,7 +565,7 @@ console.log(data.content[0].text);
 The bridge was originally built for a Figma plugin. The provider pattern uses the API key field to pass both the bridge key and URL:
 
 ```
-API Key field value: <BRIDGE_KEY>@https://bridge.yourdomain.com
+API Key field value: <USER_KEY>@https://bridge.yourdomain.com
 ```
 
 The provider code parses this:
@@ -503,9 +608,15 @@ All endpoints return the same shape (Anthropic Messages API compatible):
 
 ## API Reference
 
-All endpoints (except `/health` in auth-disabled mode) require `Authorization: Bearer <key>`.
+### User Endpoints
 
-### `POST /generate`
+All user endpoints require `Authorization: Bearer <USER_KEY>` (unless auth is disabled).
+
+#### `GET /health`
+
+Returns `{"status":"ok"}`. Unauthenticated — use for uptime monitoring.
+
+#### `POST /generate`
 
 Calls Claude Code CLI.
 
@@ -520,7 +631,7 @@ Calls Claude Code CLI.
 
 **Response:** See response shape above.
 
-### `POST /generate-codex`
+#### `POST /generate-codex`
 
 Calls Codex CLI.
 
@@ -528,28 +639,99 @@ Calls Codex CLI.
 
 **Response:** Same shape. `cost_usd` is estimated from a hardcoded pricing table.
 
-### `GET /health`
+### Admin Endpoints
 
-Returns `{"status":"ok"}`. Use for uptime monitoring and load balancer checks.
+All admin endpoints require `Authorization: Bearer <ADMIN_KEY>`.
 
-### `GET /stats`
+#### `GET /admin/keys`
 
-Returns cumulative session statistics:
+List all keys with limits and current usage.
 
 ```json
 {
-  "totalRequests": 42,
-  "totalInputTokens": 150000,
-  "totalOutputTokens": 8000,
-  "totalCacheCreationTokens": 0,
-  "totalCacheReadTokens": 120000,
-  "totalCostUSD": 0.45
+  "keys": [
+    {
+      "name": "alice",
+      "createdAt": "2026-02-15T13:42:45.911Z",
+      "limits": {
+        "maxRequestsPerDay": 0,
+        "maxRequestsPerMonth": 0,
+        "maxTokensPerMonth": 0,
+        "maxCostPerDay": 0,
+        "maxCostPerMonth": 5.00
+      },
+      "usage": {
+        "today": { "requests": 3, "tokens": 27382, "costUsd": 0.009 },
+        "thisMonth": { "requests": 45, "tokens": 412000, "costUsd": 1.23 }
+      }
+    }
+  ]
 }
 ```
 
-### `POST /stats/reset`
+#### `POST /admin/keys`
 
-Resets all session statistics to zero.
+Create a new user key.
+
+**Request:**
+```json
+{
+  "name": "string (required, unique)",
+  "maxRequestsPerDay": 0,
+  "maxRequestsPerMonth": 0,
+  "maxTokensPerMonth": 0,
+  "maxCostPerDay": 0,
+  "maxCostPerMonth": 0
+}
+```
+
+All limit fields are optional (default `0` = unlimited).
+
+**Response (201):**
+```json
+{
+  "message": "Key created for \"alice\"",
+  "key": "abc123...",
+  "note": "Save this key — it cannot be retrieved again."
+}
+```
+
+#### `GET /admin/keys/:name`
+
+Get a specific key's limits and usage.
+
+#### `PATCH /admin/keys/:name`
+
+Update a key's limits. Only include fields you want to change.
+
+```json
+{ "maxCostPerMonth": 10.00 }
+```
+
+#### `DELETE /admin/keys/:name`
+
+Revoke a key. Deletes the key and all associated usage data.
+
+#### `POST /admin/keys/:name/reset-usage`
+
+Reset a key's usage counters to zero.
+
+### Error Responses
+
+| Status | Meaning |
+|---|---|
+| 400 | Invalid request body (missing/wrong types) |
+| 401 | Missing or invalid Authorization header |
+| 403 | Invalid key |
+| 409 | Key name already exists (on create) |
+| 429 | Rate limit or per-key usage limit exceeded |
+| 500 | Generation failed (CLI error) |
+
+Limit error messages include the limit that was hit:
+```json
+{ "error": "Daily cost limit reached ($1.00/day)" }
+{ "error": "Monthly request limit reached (100/month)" }
+```
 
 ---
 
@@ -564,11 +746,11 @@ From your local machine:
 pnpm build  # Verify it compiles
 
 # Deploy
-rsync -avz --exclude node_modules --exclude dist --exclude .env \
-  -e ssh ./ai-cli-bridge/ ai-bridge:/opt/ai-cli-bridge/
+rsync -avz --exclude node_modules --exclude .env --exclude data \
+  ./ai-cli-bridge/ ai-bridge:/opt/ai-cli-bridge/
 
-# On the droplet
-ssh ai-bridge 'cd /opt/ai-cli-bridge && pnpm install && pnpm build && pm2 restart ai-cli-bridge'
+# Restart on the droplet
+ssh ai-bridge 'cd /opt/ai-cli-bridge && pnpm install --frozen-lockfile && pm2 restart ai-cli-bridge'
 ```
 
 ### Re-authenticating CLIs
@@ -594,27 +776,24 @@ ssh ai-bridge 'pm2 status'
 # Check tunnel status
 ssh ai-bridge 'systemctl status cloudflared'
 
-# Usage stats
-curl -s https://bridge.yourdomain.com/stats \
-  -H "Authorization: Bearer <KEY>"
+# Check all keys' usage
+curl -s https://bridge.yourdomain.com/admin/keys \
+  -H "Authorization: Bearer <ADMIN_KEY>"
 ```
 
-### Rotating Bridge API Keys
+### Revoking a Compromised Key
 
 ```bash
-ssh ai-bridge
+# Delete the compromised key
+curl -X DELETE https://bridge.yourdomain.com/admin/keys/compromised-user \
+  -H "Authorization: Bearer <ADMIN_KEY>"
 
-# Generate new key
-NEW_KEY=$(openssl rand -hex 32)
-
-# Update .env (can have multiple comma-separated keys for rotation)
-# OLD_KEY,NEW_KEY allows both to work during transition
-sed -i "s/^BRIDGE_API_KEYS=.*/BRIDGE_API_KEYS=<OLD_KEY>,$NEW_KEY/" /opt/ai-cli-bridge/.env
-
-# Restart to pick up new keys
-pm2 restart ai-cli-bridge
-
-# Update all clients to use NEW_KEY, then remove OLD_KEY
+# Create a replacement
+curl -X POST https://bridge.yourdomain.com/admin/keys \
+  -H "Authorization: Bearer <ADMIN_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"compromised-user","maxCostPerMonth":5.00}'
+# Give the new key to the user
 ```
 
 ### Cost Awareness
@@ -622,8 +801,9 @@ pm2 restart ai-cli-bridge
 While per-request cost is "free" (covered by your subscription), be aware:
 - **Claude Max** has monthly usage limits that vary by tier
 - **OpenAI Pro** has similar caps
-- The `/stats` endpoint tracks estimated costs for awareness
-- Heavy automated usage may hit throttling before the month ends
+- Per-key cost tracking lets you monitor spending per user
+- Use `maxCostPerDay` / `maxCostPerMonth` to cap individual users
+- Heavy automated usage may hit subscription throttling before the month ends
 
 ---
 
@@ -649,7 +829,3 @@ res.setHeader('Content-Type', 'text/event-stream');
 child.stdout.on('data', chunk => res.write(`data: ${chunk}\n\n`));
 child.on('close', () => res.end());
 ```
-
-### Multiple Bridge Keys with Per-Key Rate Limits
-
-Extend the auth middleware to identify which key was used, then apply per-key rate limiting. Useful if sharing the bridge with others.
