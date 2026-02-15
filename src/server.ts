@@ -64,7 +64,7 @@ adminRouter.get('/keys', (_req, res) => {
 
 // Create a new key
 adminRouter.post('/keys', (req, res) => {
-  const { name, maxRequestsPerDay, maxRequestsPerMonth, maxTokensPerMonth } = req.body;
+  const { name, maxRequestsPerDay, maxRequestsPerMonth, maxTokensPerMonth, maxCostPerDay, maxCostPerMonth } = req.body;
 
   if (!name || typeof name !== 'string') {
     res.status(400).json({ error: 'name is required' });
@@ -76,6 +76,8 @@ adminRouter.post('/keys', (req, res) => {
       maxRequestsPerDay: maxRequestsPerDay ?? 0,
       maxRequestsPerMonth: maxRequestsPerMonth ?? 0,
       maxTokensPerMonth: maxTokensPerMonth ?? 0,
+      maxCostPerDay: maxCostPerDay ?? 0,
+      maxCostPerMonth: maxCostPerMonth ?? 0,
     });
 
     res.status(201).json({
@@ -101,11 +103,13 @@ adminRouter.get('/keys/:name', (req, res) => {
 
 // Update a key's limits
 adminRouter.patch('/keys/:name', (req, res) => {
-  const { maxRequestsPerDay, maxRequestsPerMonth, maxTokensPerMonth } = req.body;
+  const { maxRequestsPerDay, maxRequestsPerMonth, maxTokensPerMonth, maxCostPerDay, maxCostPerMonth } = req.body;
   const updated = keyManager.updateLimits(req.params.name, {
     maxRequestsPerDay,
     maxRequestsPerMonth,
     maxTokensPerMonth,
+    maxCostPerDay,
+    maxCostPerMonth,
   });
 
   if (!updated) {
@@ -202,7 +206,7 @@ app.post('/generate', async (req, res) => {
 
     // Record per-key usage
     if (req.keyHash) {
-      keyManager.recordUsage(req.keyHash, result.usage.input_tokens, result.usage.output_tokens);
+      keyManager.recordUsage(req.keyHash, result.usage.input_tokens, result.usage.output_tokens, result.cost_usd);
     }
 
     logRequest('Claude', model || config.claudeDefaultModel, req.keyName, result.usage, result.cost_usd, result.duration_ms);
@@ -233,7 +237,7 @@ app.post('/generate-codex', async (req, res) => {
     );
 
     if (req.keyHash) {
-      keyManager.recordUsage(req.keyHash, result.usage.input_tokens, result.usage.output_tokens);
+      keyManager.recordUsage(req.keyHash, result.usage.input_tokens, result.usage.output_tokens, result.cost_usd);
     }
 
     logRequest('Codex', model || config.codexDefaultModel, req.keyName, result.usage, result.cost_usd);

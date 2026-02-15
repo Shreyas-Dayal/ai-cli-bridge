@@ -8,6 +8,8 @@ export interface KeyLimits {
   maxRequestsPerDay: number;    // 0 = unlimited
   maxRequestsPerMonth: number;  // 0 = unlimited
   maxTokensPerMonth: number;    // 0 = unlimited (input + output combined)
+  maxCostPerDay: number;        // 0 = unlimited (USD)
+  maxCostPerMonth: number;      // 0 = unlimited (USD)
 }
 
 export interface KeyEntry {
@@ -19,11 +21,13 @@ export interface KeyEntry {
 interface DailyUsage {
   requests: number;
   tokens: number;
+  costUsd: number;
 }
 
 interface MonthlyUsage {
   requests: number;
   tokens: number;
+  costUsd: number;
 }
 
 interface KeyUsage {
@@ -120,6 +124,8 @@ export class KeyManager {
         maxRequestsPerDay: limits.maxRequestsPerDay ?? 0,
         maxRequestsPerMonth: limits.maxRequestsPerMonth ?? 0,
         maxTokensPerMonth: limits.maxTokensPerMonth ?? 0,
+        maxCostPerDay: limits.maxCostPerDay ?? 0,
+        maxCostPerMonth: limits.maxCostPerMonth ?? 0,
       },
     };
 
@@ -146,11 +152,17 @@ export class KeyManager {
         if (limits.maxRequestsPerDay !== undefined) entry.limits.maxRequestsPerDay = limits.maxRequestsPerDay;
         if (limits.maxRequestsPerMonth !== undefined) entry.limits.maxRequestsPerMonth = limits.maxRequestsPerMonth;
         if (limits.maxTokensPerMonth !== undefined) entry.limits.maxTokensPerMonth = limits.maxTokensPerMonth;
+        if (limits.maxCostPerDay !== undefined) entry.limits.maxCostPerDay = limits.maxCostPerDay;
+        if (limits.maxCostPerMonth !== undefined) entry.limits.maxCostPerMonth = limits.maxCostPerMonth;
         this.saveKeys();
         return true;
       }
     }
     return false;
+  }
+
+  private normalizeUsage(raw: Partial<DailyUsage> | undefined): DailyUsage {
+    return { requests: raw?.requests || 0, tokens: raw?.tokens || 0, costUsd: raw?.costUsd || 0 };
   }
 
   listKeys(): Array<{ name: string; createdAt: string; limits: KeyLimits; usage: { today: DailyUsage; thisMonth: MonthlyUsage } }> {
@@ -164,8 +176,8 @@ export class KeyManager {
         createdAt: entry.createdAt,
         limits: entry.limits,
         usage: {
-          today: keyUsage?.daily[today] || { requests: 0, tokens: 0 },
-          thisMonth: keyUsage?.monthly[month] || { requests: 0, tokens: 0 },
+          today: this.normalizeUsage(keyUsage?.daily[today]),
+          thisMonth: this.normalizeUsage(keyUsage?.monthly[month]),
         },
       };
     });
@@ -182,8 +194,8 @@ export class KeyManager {
           name: entry.name,
           limits: entry.limits,
           usage: {
-            today: keyUsage?.daily[today] || { requests: 0, tokens: 0 },
-            thisMonth: keyUsage?.monthly[month] || { requests: 0, tokens: 0 },
+            today: this.normalizeUsage(keyUsage?.daily[today]),
+            thisMonth: this.normalizeUsage(keyUsage?.monthly[month]),
           },
         };
       }
@@ -254,11 +266,25 @@ export class KeyManager {
       }
     }
 
+    if (entry.limits.maxCostPerDay > 0) {
+      const dailyCost = keyUsage?.daily[today]?.costUsd || 0;
+      if (dailyCost >= entry.limits.maxCostPerDay) {
+        return `Daily cost limit reached ($${entry.limits.maxCostPerDay.toFixed(2)}/day)`;
+      }
+    }
+
+    if (entry.limits.maxCostPerMonth > 0) {
+      const monthlyCost = keyUsage?.monthly[month]?.costUsd || 0;
+      if (monthlyCost >= entry.limits.maxCostPerMonth) {
+        return `Monthly cost limit reached ($${entry.limits.maxCostPerMonth.toFixed(2)}/month)`;
+      }
+    }
+
     return null;
   }
 
   /** Record usage after a successful generation. Accepts pre-computed hash. */
-  recordUsage(keyHash: string, inputTokens: number, outputTokens: number): void {
+  recordUsage(keyHash: string, inputTokens: number, outputTokens: number, costUsd: number): void {
     if (!this.keys.keys[keyHash]) return;
 
     const today = this.todayKey();
@@ -272,14 +298,16 @@ export class KeyManager {
     const u = this.usage.usage[keyHash];
 
     // Daily
-    if (!u.daily[today]) u.daily[today] = { requests: 0, tokens: 0 };
+    if (!u.daily[today]) u.daily[today] = { requests: 0, tokens: 0, costUsd: 0 };
     u.daily[today].requests++;
     u.daily[today].tokens += totalTokens;
+    u.daily[today].costUsd = (u.daily[today].costUsd || 0) + costUsd;
 
     // Monthly
-    if (!u.monthly[month]) u.monthly[month] = { requests: 0, tokens: 0 };
+    if (!u.monthly[month]) u.monthly[month] = { requests: 0, tokens: 0, costUsd: 0 };
     u.monthly[month].requests++;
     u.monthly[month].tokens += totalTokens;
+    u.monthly[month].costUsd = (u.monthly[month].costUsd || 0) + costUsd;
 
     this.dirty = true;
   }
