@@ -35,6 +35,20 @@ interface KeyUsage {
   monthly: Record<string, MonthlyUsage>; // "2026-02" → counts
 }
 
+export interface RequestLog {
+  id: string;
+  timestamp: string;
+  keyName: string;
+  provider: string;
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  durationMs: number;
+}
+
 interface KeysFile {
   keys: Record<string, KeyEntry>; // SHA-256 hash → config
 }
@@ -43,28 +57,44 @@ interface UsageFile {
   usage: Record<string, KeyUsage>; // SHA-256 hash → usage
 }
 
+interface LogsFile {
+  logs: RequestLog[];
+}
+
 // ── KeyManager ───────────────────────────────────────────────────────────────
 
 export class KeyManager {
   private keysFile: string;
   private usageFile: string;
+  private logsFile: string;
   private keys: KeysFile = { keys: {} };
   private usage: UsageFile = { usage: {} };
+  private logs: LogsFile = { logs: [] };
   private saveTimer: ReturnType<typeof setInterval> | null = null;
   private dirty = false;
+  private logsDirty = false;
+
+  private static MAX_LOGS = 1000;
+  private static LOG_TRUNCATE = 200;
 
   constructor(dataDir: string) {
     mkdirSync(dataDir, { recursive: true });
     this.keysFile = join(dataDir, 'keys.json');
     this.usageFile = join(dataDir, 'usage.json');
+    this.logsFile = join(dataDir, 'logs.json');
     this.load();
 
-    // Auto-save usage every 30 seconds if dirty, prune old entries daily
+    // Auto-save usage + logs every 30 seconds if dirty, prune old entries
     this.pruneOldUsage();
+    this.pruneOldLogs();
     this.saveTimer = setInterval(() => {
       if (this.dirty) {
         this.saveUsage();
         this.dirty = false;
+      }
+      if (this.logsDirty) {
+        this.saveLogs();
+        this.logsDirty = false;
       }
     }, 30_000);
   }
@@ -88,6 +118,14 @@ export class KeyManager {
         this.usage = { usage: {} };
       }
     }
+    if (existsSync(this.logsFile)) {
+      try {
+        this.logs = JSON.parse(readFileSync(this.logsFile, 'utf-8'));
+      } catch {
+        console.error('[keys] Failed to parse logs.json — starting with empty logs');
+        this.logs = { logs: [] };
+      }
+    }
   }
 
   private saveKeys(): void {
@@ -96,6 +134,10 @@ export class KeyManager {
 
   private saveUsage(): void {
     writeFileSync(this.usageFile, JSON.stringify(this.usage, null, 2), { mode: 0o600 });
+  }
+
+  private saveLogs(): void {
+    writeFileSync(this.logsFile, JSON.stringify(this.logs, null, 2), { mode: 0o600 });
   }
 
   // ── Hashing ──────────────────────────────────────────────────────────────
@@ -312,6 +354,42 @@ export class KeyManager {
     this.dirty = true;
   }
 
+  // ── Request Logs ────────────────────────────────────────────────────────
+
+  logRequest(entry: Omit<RequestLog, 'id' | 'timestamp'>): void {
+    const log: RequestLog = {
+      id: randomBytes(6).toString('hex'),
+      timestamp: new Date().toISOString(),
+      keyName: entry.keyName,
+      provider: entry.provider,
+      model: entry.model,
+      systemPrompt: entry.systemPrompt.slice(0, KeyManager.LOG_TRUNCATE),
+      userPrompt: entry.userPrompt.slice(0, KeyManager.LOG_TRUNCATE),
+      inputTokens: entry.inputTokens,
+      outputTokens: entry.outputTokens,
+      costUsd: entry.costUsd,
+      durationMs: entry.durationMs,
+    };
+
+    this.logs.logs.push(log);
+
+    // FIFO cap
+    if (this.logs.logs.length > KeyManager.MAX_LOGS) {
+      this.logs.logs = this.logs.logs.slice(-KeyManager.MAX_LOGS);
+    }
+
+    this.logsDirty = true;
+  }
+
+  getLogs(keyName?: string, limit = 50): RequestLog[] {
+    let result = this.logs.logs;
+    if (keyName) {
+      result = result.filter(l => l.keyName === keyName);
+    }
+    // Return newest first, capped at limit
+    return result.slice(-limit).reverse();
+  }
+
   hasKeys(): boolean {
     return Object.keys(this.keys.keys).length > 0;
   }
@@ -347,6 +425,14 @@ export class KeyManager {
     if (pruned) this.saveUsage();
   }
 
+  /** Remove log entries older than 90 days. */
+  private pruneOldLogs(): void {
+    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const before = this.logs.logs.length;
+    this.logs.logs = this.logs.logs.filter(l => l.timestamp >= cutoff);
+    if (this.logs.logs.length < before) this.saveLogs();
+  }
+
   private todayKey(): string {
     return new Date().toISOString().slice(0, 10); // "2026-02-15"
   }
@@ -358,5 +444,6 @@ export class KeyManager {
   shutdown(): void {
     if (this.saveTimer) clearInterval(this.saveTimer);
     if (this.dirty) this.saveUsage();
+    if (this.logsDirty) this.saveLogs();
   }
 }
