@@ -1,8 +1,13 @@
+import { join } from 'path';
+
 export const config = {
   port: parseInt(process.env.PORT || '3456', 10),
 
-  // Auth
-  apiKeys: (process.env.BRIDGE_API_KEYS || '').split(',').filter(Boolean),
+  // Admin key for /admin/* endpoints
+  adminKey: process.env.BRIDGE_ADMIN_KEY || '',
+
+  // Data directory for keys.json and usage.json
+  dataDir: process.env.DATA_DIR || join(process.cwd(), 'data'),
 
   // Rate limiting
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10),
