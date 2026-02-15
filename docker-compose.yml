@@ -1,0 +1,21 @@
+services:
+  bridge:
+    build: .
+    ports:
+      - "${PORT:-3456}:3456"
+    env_file: .env
+    volumes:
+      # Persist CLI auth tokens across container restarts
+      - claude-auth:/home/bridge/.claude
+      - codex-auth:/home/bridge/.config
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3456/health').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  claude-auth:
+  codex-auth:
