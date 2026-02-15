@@ -3,13 +3,20 @@ import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { config } from './config.js';
-import { authMiddleware } from './middleware/auth.js';
+import { KeyManager } from './keys.js';
+import { keyAuthMiddleware, adminAuthMiddleware } from './middleware/auth.js';
 import { generateWithClaude } from './providers/claude.js';
 import { generateWithCodex } from './providers/codex.js';
 
 const app = express();
+app.set('trust proxy', 1); // Trust first proxy (Cloudflare Tunnel)
+const keyManager = new KeyManager(config.dataDir);
 
-const MAX_PROMPT_LENGTH = 500_000; // 500K chars
+const MAX_PROMPT_LENGTH = 500_000;
+
+// Graceful shutdown
+process.on('SIGTERM', () => { keyManager.shutdown(); process.exit(0); });
+process.on('SIGINT', () => { keyManager.shutdown(); process.exit(0); });
 
 // ── Security headers ─────────────────────────────────────────────────────────
 
@@ -23,7 +30,6 @@ app.use((_req, res, next) => {
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 
-// CORS
 if (config.corsOrigins.length > 0) {
   app.use(cors({ origin: config.corsOrigins }));
 } else {
@@ -32,7 +38,6 @@ if (config.corsOrigins.length > 0) {
 
 app.use(express.json({ limit: '5mb' }));
 
-// Rate limiting
 app.use(rateLimit({
   windowMs: config.rateLimitWindowMs,
   max: config.rateLimitMaxRequests,
@@ -41,49 +46,100 @@ app.use(rateLimit({
   message: { error: 'Too many requests, try again later' },
 }));
 
-// Auth — applied to all routes below
-app.use(authMiddleware(config.apiKeys));
+// ── Health (unauthenticated) ─────────────────────────────────────────────────
 
-// ── Session stats ────────────────────────────────────────────────────────────
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok' });
+});
 
-let sessionStats = {
-  totalRequests: 0,
-  totalInputTokens: 0,
-  totalOutputTokens: 0,
-  totalCacheCreationTokens: 0,
-  totalCacheReadTokens: 0,
-  totalCostUSD: 0,
-};
+// ── Admin routes (admin key auth) ────────────────────────────────────────────
 
-function updateStats(usage: {
-  input_tokens: number;
-  output_tokens: number;
-  cache_creation_input_tokens?: number;
-  cache_read_input_tokens?: number;
-  cached_input_tokens?: number;
-}, costUSD: number) {
-  sessionStats.totalRequests++;
-  sessionStats.totalInputTokens += usage.input_tokens;
-  sessionStats.totalOutputTokens += usage.output_tokens;
-  sessionStats.totalCacheCreationTokens += usage.cache_creation_input_tokens || 0;
-  sessionStats.totalCacheReadTokens += (usage.cache_read_input_tokens || 0) + (usage.cached_input_tokens || 0);
-  sessionStats.totalCostUSD += costUSD;
-}
+const adminRouter = express.Router();
+adminRouter.use(adminAuthMiddleware(config.adminKey));
 
-function logRequest(provider: string, model: string, usage: Record<string, number>, costUSD: number, durationMs?: number) {
-  console.log('\n─────────────────────────────────────────');
-  console.log(`[${provider}] Request #${sessionStats.totalRequests} completed`);
-  console.log(`  Model: ${model}`);
-  if (durationMs) console.log(`  Duration: ${(durationMs / 1000).toFixed(2)}s`);
-  console.log(`  Tokens: ${usage.input_tokens || 0} in / ${usage.output_tokens || 0} out`);
-  if (usage.cache_creation_input_tokens) console.log(`  Cache created: ${usage.cache_creation_input_tokens}`);
-  if (usage.cache_read_input_tokens || usage.cached_input_tokens) {
-    console.log(`  Cache read: ${usage.cache_read_input_tokens || usage.cached_input_tokens}`);
+// List all keys with usage
+adminRouter.get('/keys', (_req, res) => {
+  res.json({ keys: keyManager.listKeys() });
+});
+
+// Create a new key
+adminRouter.post('/keys', (req, res) => {
+  const { name, maxRequestsPerDay, maxRequestsPerMonth, maxTokensPerMonth } = req.body;
+
+  if (!name || typeof name !== 'string') {
+    res.status(400).json({ error: 'name is required' });
+    return;
   }
-  console.log(`  Cost: $${costUSD.toFixed(6)}`);
-  console.log(`  Session total: $${sessionStats.totalCostUSD.toFixed(6)}`);
-  console.log('─────────────────────────────────────────\n');
-}
+
+  try {
+    const rawKey = keyManager.createKey(name, {
+      maxRequestsPerDay: maxRequestsPerDay ?? 0,
+      maxRequestsPerMonth: maxRequestsPerMonth ?? 0,
+      maxTokensPerMonth: maxTokensPerMonth ?? 0,
+    });
+
+    res.status(201).json({
+      message: `Key created for "${name}"`,
+      key: rawKey,
+      note: 'Save this key — it cannot be retrieved again.',
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to create key';
+    res.status(409).json({ error: message });
+  }
+});
+
+// Get a specific key's usage
+adminRouter.get('/keys/:name', (req, res) => {
+  const info = keyManager.getKeyUsage(req.params.name);
+  if (!info) {
+    res.status(404).json({ error: 'Key not found' });
+    return;
+  }
+  res.json(info);
+});
+
+// Update a key's limits
+adminRouter.patch('/keys/:name', (req, res) => {
+  const { maxRequestsPerDay, maxRequestsPerMonth, maxTokensPerMonth } = req.body;
+  const updated = keyManager.updateLimits(req.params.name, {
+    maxRequestsPerDay,
+    maxRequestsPerMonth,
+    maxTokensPerMonth,
+  });
+
+  if (!updated) {
+    res.status(404).json({ error: 'Key not found' });
+    return;
+  }
+  res.json({ message: `Limits updated for "${req.params.name}"` });
+});
+
+// Delete a key
+adminRouter.delete('/keys/:name', (req, res) => {
+  const deleted = keyManager.deleteKey(req.params.name);
+  if (!deleted) {
+    res.status(404).json({ error: 'Key not found' });
+    return;
+  }
+  res.json({ message: `Key "${req.params.name}" deleted` });
+});
+
+// Reset a key's usage
+adminRouter.post('/keys/:name/reset-usage', (req, res) => {
+  const reset = keyManager.resetUsage(req.params.name);
+  if (!reset) {
+    res.status(404).json({ error: 'Key not found' });
+    return;
+  }
+  res.json({ message: `Usage reset for "${req.params.name}"` });
+});
+
+app.use('/admin', adminRouter);
+
+// ── User routes (per-user key auth) ──────────────────────────────────────────
+
+app.use(keyAuthMiddleware(keyManager));
 
 // ── Input validation ─────────────────────────────────────────────────────────
 
@@ -106,27 +162,23 @@ function validateGenerateBody(body: Record<string, unknown>): { error?: string }
   return {};
 }
 
-// ── Routes ───────────────────────────────────────────────────────────────────
+// ── Logging ──────────────────────────────────────────────────────────────────
 
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok' });
-});
+function logRequest(provider: string, model: string, keyName: string | undefined, usage: Record<string, number>, costUSD: number, durationMs?: number) {
+  console.log('\n─────────────────────────────────────────');
+  console.log(`[${provider}] ${keyName || 'anonymous'}`);
+  console.log(`  Model: ${model}`);
+  if (durationMs) console.log(`  Duration: ${(durationMs / 1000).toFixed(2)}s`);
+  console.log(`  Tokens: ${usage.input_tokens || 0} in / ${usage.output_tokens || 0} out`);
+  if (usage.cache_creation_input_tokens) console.log(`  Cache created: ${usage.cache_creation_input_tokens}`);
+  if (usage.cache_read_input_tokens || usage.cached_input_tokens) {
+    console.log(`  Cache read: ${usage.cache_read_input_tokens || usage.cached_input_tokens}`);
+  }
+  console.log(`  Cost: $${costUSD.toFixed(6)}`);
+  console.log('─────────────────────────────────────────\n');
+}
 
-app.get('/stats', (_req, res) => {
-  res.json(sessionStats);
-});
-
-app.post('/stats/reset', (_req, res) => {
-  sessionStats = {
-    totalRequests: 0,
-    totalInputTokens: 0,
-    totalOutputTokens: 0,
-    totalCacheCreationTokens: 0,
-    totalCacheReadTokens: 0,
-    totalCostUSD: 0,
-  };
-  res.json({ message: 'Stats reset', stats: sessionStats });
-});
+// ── Generation routes ────────────────────────────────────────────────────────
 
 // Claude Code CLI
 app.post('/generate', async (req, res) => {
@@ -148,9 +200,12 @@ app.post('/generate', async (req, res) => {
       }
     );
 
-    updateStats(result.usage, result.cost_usd);
-    logRequest('Claude', model || config.claudeDefaultModel, result.usage, result.cost_usd, result.duration_ms);
+    // Record per-key usage
+    if (req.rawKey) {
+      keyManager.recordUsage(req.rawKey, result.usage.input_tokens, result.usage.output_tokens);
+    }
 
+    logRequest('Claude', model || config.claudeDefaultModel, req.keyName, result.usage, result.cost_usd, result.duration_ms);
     res.json(result);
   } catch {
     res.status(500).json({ error: 'Generation failed' });
@@ -177,9 +232,11 @@ app.post('/generate-codex', async (req, res) => {
       }
     );
 
-    updateStats(result.usage, result.cost_usd);
-    logRequest('Codex', model || config.codexDefaultModel, result.usage, result.cost_usd);
+    if (req.rawKey) {
+      keyManager.recordUsage(req.rawKey, result.usage.input_tokens, result.usage.output_tokens);
+    }
 
+    logRequest('Codex', model || config.codexDefaultModel, req.keyName, result.usage, result.cost_usd);
     res.json(result);
   } catch {
     res.status(500).json({ error: 'Generation failed' });
@@ -190,13 +247,19 @@ app.post('/generate-codex', async (req, res) => {
 
 app.listen(config.port, () => {
   console.log(`\nai-cli-bridge running on http://localhost:${config.port}`);
-  console.log(`  Auth: ${config.apiKeys.length > 0 ? `enabled (${config.apiKeys.length} key(s))` : 'DISABLED (no BRIDGE_API_KEYS set)'}`);
+  console.log(`  Keys: ${keyManager.hasKeys() ? `${keyManager.keyCount()} key(s)` : 'NONE (auth disabled)'}`);
+  console.log(`  Admin: ${config.adminKey ? 'enabled' : 'DISABLED (no BRIDGE_ADMIN_KEY set)'}`);
   console.log(`  Rate limit: ${config.rateLimitMaxRequests} req / ${config.rateLimitWindowMs / 1000}s`);
-  console.log(`  CORS: ${config.corsOrigins.length > 0 ? config.corsOrigins.join(', ') : 'all origins'}`);
+  console.log(`  Data dir: ${config.dataDir}`);
   console.log('  Endpoints:');
-  console.log('    POST /generate       — Claude Code CLI');
-  console.log('    POST /generate-codex — Codex CLI');
-  console.log('    GET  /health         — Health check');
-  console.log('    GET  /stats          — Session usage stats');
-  console.log('    POST /stats/reset    — Reset stats\n');
+  console.log('    POST /generate          — Claude Code CLI');
+  console.log('    POST /generate-codex    — Codex CLI');
+  console.log('    GET  /health            — Health check');
+  console.log('  Admin:');
+  console.log('    GET    /admin/keys          — List keys + usage');
+  console.log('    POST   /admin/keys          — Create key');
+  console.log('    GET    /admin/keys/:name    — Key usage details');
+  console.log('    PATCH  /admin/keys/:name    — Update limits');
+  console.log('    DELETE /admin/keys/:name    — Revoke key');
+  console.log('    POST   /admin/keys/:name/reset-usage\n');
 });
