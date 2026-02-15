@@ -2,12 +2,12 @@ import type { Request, Response, NextFunction } from 'express';
 import { timingSafeEqual } from 'crypto';
 import type { KeyManager } from '../keys.js';
 
-// Extend Express Request to carry the authenticated key name
+// Extend Express Request to carry the authenticated key identity
 declare global {
   namespace Express {
     interface Request {
       keyName?: string;
-      rawKey?: string;
+      keyHash?: string;
     }
   }
 }
@@ -28,21 +28,16 @@ export function keyAuthMiddleware(keyManager: KeyManager) {
     }
 
     const rawKey = authHeader.slice(7);
-    const keyName = keyManager.validate(rawKey);
-    if (!keyName) {
-      res.status(403).json({ error: 'Forbidden' });
+    const validationResult = keyManager.validateAndCheck(rawKey);
+
+    if (validationResult.error) {
+      const status = validationResult.error === 'Forbidden' ? 403 : 429;
+      res.status(status).json({ error: validationResult.error });
       return;
     }
 
-    // Check usage limits
-    const limitError = keyManager.checkLimits(rawKey);
-    if (limitError) {
-      res.status(429).json({ error: limitError });
-      return;
-    }
-
-    req.keyName = keyName;
-    req.rawKey = rawKey;
+    req.keyName = validationResult.name;
+    req.keyHash = validationResult.hash;
     next();
   };
 }
@@ -51,7 +46,7 @@ export function keyAuthMiddleware(keyManager: KeyManager) {
 export function adminAuthMiddleware(adminKey: string) {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!adminKey) {
-      res.status(503).json({ error: 'Admin API not configured' });
+      res.status(401).json({ error: 'Unauthorized' });
       return;
     }
 
