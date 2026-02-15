@@ -55,7 +55,8 @@ export class KeyManager {
     this.usageFile = join(dataDir, 'usage.json');
     this.load();
 
-    // Auto-save usage every 30 seconds if dirty
+    // Auto-save usage every 30 seconds if dirty, prune old entries daily
+    this.pruneOldUsage();
     this.saveTimer = setInterval(() => {
       if (this.dirty) {
         this.saveUsage();
@@ -68,10 +69,20 @@ export class KeyManager {
 
   private load(): void {
     if (existsSync(this.keysFile)) {
-      this.keys = JSON.parse(readFileSync(this.keysFile, 'utf-8'));
+      try {
+        this.keys = JSON.parse(readFileSync(this.keysFile, 'utf-8'));
+      } catch {
+        console.error('[keys] Failed to parse keys.json — starting with empty keys');
+        this.keys = { keys: {} };
+      }
     }
     if (existsSync(this.usageFile)) {
-      this.usage = JSON.parse(readFileSync(this.usageFile, 'utf-8'));
+      try {
+        this.usage = JSON.parse(readFileSync(this.usageFile, 'utf-8'));
+      } catch {
+        console.error('[keys] Failed to parse usage.json — starting with empty usage');
+        this.usage = { usage: {} };
+      }
     }
   }
 
@@ -193,25 +204,30 @@ export class KeyManager {
 
   // ── Auth & Limits ────────────────────────────────────────────────────────
 
-  /** Returns key name if valid, null if not. Uses timing-safe comparison. */
-  validate(rawKey: string): string | null {
+  /** Validate key and check limits in one call. Returns hash so rawKey never needs to be stored. */
+  validateAndCheck(rawKey: string): { name?: string; hash?: string; error?: string } {
     const incomingHash = this.hash(rawKey);
 
+    let matchedEntry: KeyEntry | null = null;
     for (const [storedHash, entry] of Object.entries(this.keys.keys)) {
       if (incomingHash.length === storedHash.length) {
         if (timingSafeEqual(Buffer.from(incomingHash), Buffer.from(storedHash))) {
-          return entry.name;
+          matchedEntry = entry;
+          break;
         }
       }
     }
-    return null;
+
+    if (!matchedEntry) return { error: 'Forbidden' };
+
+    // Check limits
+    const limitError = this.checkLimitsByHash(incomingHash, matchedEntry);
+    if (limitError) return { error: limitError };
+
+    return { name: matchedEntry.name, hash: incomingHash };
   }
 
-  /** Check if key is within its limits. Returns null if OK, error message if over limit. */
-  checkLimits(rawKey: string): string | null {
-    const keyHash = this.hash(rawKey);
-    const entry = this.keys.keys[keyHash];
-    if (!entry) return 'Invalid key';
+  private checkLimitsByHash(keyHash: string, entry: KeyEntry): string | null {
 
     const today = this.todayKey();
     const month = this.monthKey();
@@ -241,9 +257,8 @@ export class KeyManager {
     return null;
   }
 
-  /** Record usage after a successful generation. */
-  recordUsage(rawKey: string, inputTokens: number, outputTokens: number): void {
-    const keyHash = this.hash(rawKey);
+  /** Record usage after a successful generation. Accepts pre-computed hash. */
+  recordUsage(keyHash: string, inputTokens: number, outputTokens: number): void {
     if (!this.keys.keys[keyHash]) return;
 
     const today = this.todayKey();
@@ -278,6 +293,31 @@ export class KeyManager {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
+
+  /** Remove daily entries older than 90 days and monthly entries older than 12 months. */
+  private pruneOldUsage(): void {
+    const now = Date.now();
+    const dailyCutoff = new Date(now - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const monthlyCutoff = new Date(now - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 7);
+    let pruned = false;
+
+    for (const keyUsage of Object.values(this.usage.usage)) {
+      for (const day of Object.keys(keyUsage.daily)) {
+        if (day < dailyCutoff) {
+          delete keyUsage.daily[day];
+          pruned = true;
+        }
+      }
+      for (const month of Object.keys(keyUsage.monthly)) {
+        if (month < monthlyCutoff) {
+          delete keyUsage.monthly[month];
+          pruned = true;
+        }
+      }
+    }
+
+    if (pruned) this.saveUsage();
+  }
 
   private todayKey(): string {
     return new Date().toISOString().slice(0, 10); // "2026-02-15"
