@@ -201,8 +201,8 @@ app.post('/generate', async (req, res) => {
     );
 
     // Record per-key usage
-    if (req.rawKey) {
-      keyManager.recordUsage(req.rawKey, result.usage.input_tokens, result.usage.output_tokens);
+    if (req.keyHash) {
+      keyManager.recordUsage(req.keyHash, result.usage.input_tokens, result.usage.output_tokens);
     }
 
     logRequest('Claude', model || config.claudeDefaultModel, req.keyName, result.usage, result.cost_usd, result.duration_ms);
@@ -232,8 +232,8 @@ app.post('/generate-codex', async (req, res) => {
       }
     );
 
-    if (req.rawKey) {
-      keyManager.recordUsage(req.rawKey, result.usage.input_tokens, result.usage.output_tokens);
+    if (req.keyHash) {
+      keyManager.recordUsage(req.keyHash, result.usage.input_tokens, result.usage.output_tokens);
     }
 
     logRequest('Codex', model || config.codexDefaultModel, req.keyName, result.usage, result.cost_usd);
