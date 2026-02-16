@@ -28,6 +28,9 @@
   const logTableBody = $('#logTableBody');
   const logKeyFilter = $('#logKeyFilter');
   const logLimitFilter = $('#logLimitFilter');
+  const toggleEndpoints = $('#toggleEndpoints');
+  const endpointGrid = $('#endpointGrid');
+  const endpointBase = $('#endpointBase');
 
   // ── Format helpers ──
   function fmtNum(n) {
@@ -545,6 +548,14 @@
   createKeyBtn.addEventListener('click', showCreateModal);
   logKeyFilter.addEventListener('change', loadLogs);
   logLimitFilter.addEventListener('change', loadLogs);
+  toggleEndpoints.addEventListener('click', () => {
+    const visible = endpointGrid.style.display !== 'none';
+    endpointGrid.style.display = visible ? 'none' : 'grid';
+    toggleEndpoints.textContent = visible ? 'Show' : 'Hide';
+  });
+
+  // Populate base URL
+  endpointBase.textContent = 'Base: ' + window.location.origin;
 
   // ── Public API for inline handlers ──
   window.app = {
