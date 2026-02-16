@@ -30,7 +30,7 @@
   const logLimitFilter = $('#logLimitFilter');
   const toggleEndpoints = $('#toggleEndpoints');
   const endpointGrid = $('#endpointGrid');
-  const endpointBase = $('#endpointBase');
+  const baseUrlTag = $('#baseUrlTag');
 
   // ── Format helpers ──
   function fmtNum(n) {
@@ -555,7 +555,7 @@
   });
 
   // Populate base URL
-  endpointBase.textContent = 'Base: ' + window.location.origin;
+  baseUrlTag.textContent = window.location.origin;
 
   // ── Public API for inline handlers ──
   window.app = {

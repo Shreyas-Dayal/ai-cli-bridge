@@ -43,7 +43,10 @@
 
     <div class="endpoint-ref">
       <div class="section-header" style="margin-bottom: 0;">
-        <h2>Endpoints</h2>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <h2>Endpoints</h2>
+          <span class="base-url-tag" id="baseUrlTag"></span>
+        </div>
         <button class="btn btn-sm" id="toggleEndpoints">Show</button>
       </div>
       <div class="endpoint-grid" id="endpointGrid" style="display: none;">
@@ -117,7 +120,6 @@
           <div class="endpoint-desc">Request logs</div>
           <div class="endpoint-detail">Query: ?key=name&amp;limit=50</div>
         </div>
-        <div class="endpoint-base" id="endpointBase"></div>
       </div>
     </div>
 

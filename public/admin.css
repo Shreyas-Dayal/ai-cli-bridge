@@ -336,14 +336,16 @@ body::before {
   line-height: 1.6;
 }
 
-.endpoint-base {
-  grid-column: 1 / -1;
+.base-url-tag {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--text-muted);
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-  margin-top: 4px;
+  color: var(--accent);
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  padding: 2px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
 }
 
 /* ── Key table ── */
