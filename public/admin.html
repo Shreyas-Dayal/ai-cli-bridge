@@ -41,6 +41,86 @@
   <div class="main">
     <div class="stats" id="statsRow"></div>
 
+    <div class="endpoint-ref">
+      <div class="section-header" style="margin-bottom: 0;">
+        <h2>Endpoints</h2>
+        <button class="btn btn-sm" id="toggleEndpoints">Show</button>
+      </div>
+      <div class="endpoint-grid" id="endpointGrid" style="display: none;">
+        <div class="endpoint-card">
+          <div class="endpoint-header">
+            <span class="method post">POST</span>
+            <span class="endpoint-path">/generate</span>
+          </div>
+          <div class="endpoint-desc">Claude Code CLI</div>
+          <div class="endpoint-detail">Auth: Bearer &lt;user-key&gt;</div>
+          <div class="endpoint-detail">Body: { systemPrompt, userPrompt, model? }</div>
+        </div>
+        <div class="endpoint-card">
+          <div class="endpoint-header">
+            <span class="method post">POST</span>
+            <span class="endpoint-path">/generate-codex</span>
+          </div>
+          <div class="endpoint-desc">Codex CLI</div>
+          <div class="endpoint-detail">Auth: Bearer &lt;user-key&gt;</div>
+          <div class="endpoint-detail">Body: { systemPrompt, userPrompt, model? }</div>
+        </div>
+        <div class="endpoint-card">
+          <div class="endpoint-header">
+            <span class="method get">GET</span>
+            <span class="endpoint-path">/health</span>
+          </div>
+          <div class="endpoint-desc">Health check (no auth)</div>
+        </div>
+        <div class="endpoint-card">
+          <div class="endpoint-header">
+            <span class="method get">GET</span>
+            <span class="endpoint-path">/admin/keys</span>
+          </div>
+          <div class="endpoint-desc">List keys + usage</div>
+          <div class="endpoint-detail">Auth: Bearer &lt;admin-key&gt;</div>
+        </div>
+        <div class="endpoint-card">
+          <div class="endpoint-header">
+            <span class="method post">POST</span>
+            <span class="endpoint-path">/admin/keys</span>
+          </div>
+          <div class="endpoint-desc">Create key</div>
+          <div class="endpoint-detail">Body: { name, maxRequestsPerDay?, ... }</div>
+        </div>
+        <div class="endpoint-card">
+          <div class="endpoint-header">
+            <span class="method patch">PATCH</span>
+            <span class="endpoint-path">/admin/keys/:name</span>
+          </div>
+          <div class="endpoint-desc">Update limits</div>
+        </div>
+        <div class="endpoint-card">
+          <div class="endpoint-header">
+            <span class="method delete">DELETE</span>
+            <span class="endpoint-path">/admin/keys/:name</span>
+          </div>
+          <div class="endpoint-desc">Revoke key</div>
+        </div>
+        <div class="endpoint-card">
+          <div class="endpoint-header">
+            <span class="method post">POST</span>
+            <span class="endpoint-path">/admin/keys/:name/reset-usage</span>
+          </div>
+          <div class="endpoint-desc">Reset usage counters</div>
+        </div>
+        <div class="endpoint-card">
+          <div class="endpoint-header">
+            <span class="method get">GET</span>
+            <span class="endpoint-path">/admin/logs</span>
+          </div>
+          <div class="endpoint-desc">Request logs</div>
+          <div class="endpoint-detail">Query: ?key=name&amp;limit=50</div>
+        </div>
+        <div class="endpoint-base" id="endpointBase"></div>
+      </div>
+    </div>
+
     <div class="section-header">
       <h2>API Keys</h2>
       <button class="btn btn-primary btn-sm" id="createKeyBtn">+ Create Key</button>
