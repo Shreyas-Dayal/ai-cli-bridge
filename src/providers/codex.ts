@@ -60,6 +60,8 @@ export function generateWithCodex(
       '-', // Read prompt from stdin
     ];
 
+    // execFile passes args as an array (no shell interpolation), preventing
+    // command injection even if prompt content contains shell metacharacters.
     const child = execFile('codex', args, {
       timeout: cfg.timeoutMs,
       maxBuffer: cfg.maxBuffer,
@@ -70,7 +72,9 @@ export function generateWithCodex(
         return;
       }
 
-      // Parse JSONL output — each line is a separate JSON event
+      // Codex CLI outputs JSONL (one JSON object per line). We scan for:
+      //   - item.completed with agent_message → the actual response text
+      //   - turn.completed with usage → token counts for tracking
       const lines = stdout.split('\n').filter(l => l.trim());
       let resultText = '';
       let inputTokens = 0;
