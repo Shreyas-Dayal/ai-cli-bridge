@@ -52,7 +52,8 @@ export function generateWithClaude(
   return new Promise((resolve, reject) => {
     const model = req.model || cfg.defaultModel;
 
-    // Write system prompt to temp file with restrictive permissions
+    // Write system prompt to a temp file with owner-only permissions (0o600)
+    // so other users on the system cannot read prompt content.
     const tmpFile = join(tmpdir(), `cli-bridge-${randomUUID()}.txt`);
     writeFileSync(tmpFile, req.systemPrompt, { encoding: 'utf-8', mode: 0o600 });
 
@@ -65,6 +66,8 @@ export function generateWithClaude(
       '--output-format', 'json',
     ];
 
+    // execFile passes args as an array (no shell interpolation), preventing
+    // command injection even if prompt content contains shell metacharacters.
     const child = execFile('claude', args, {
       timeout: cfg.timeoutMs,
       maxBuffer: cfg.maxBuffer,
@@ -82,6 +85,8 @@ export function generateWithClaude(
       try {
         cliResult = JSON.parse(stdout);
       } catch {
+        // If the CLI output isn't valid JSON (e.g. plain text mode),
+        // return raw stdout as the response with zeroed usage.
         resolve({
           content: [{ type: 'text', text: stdout }],
           usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
