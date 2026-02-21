@@ -26,6 +26,8 @@ app.use((_req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'");
   next();
 });
 
@@ -59,6 +61,13 @@ app.use('/admin/dashboard', express.static(join(process.cwd(), 'public')));
 // ── Admin routes (admin key auth) ────────────────────────────────────────────
 
 const adminRouter = express.Router();
+adminRouter.use(rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many admin requests, try again later' },
+}));
 adminRouter.use(adminAuthMiddleware(config.adminKey));
 
 // List all keys with usage
