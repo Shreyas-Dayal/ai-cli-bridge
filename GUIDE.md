@@ -63,7 +63,7 @@ The tradeoff: more infrastructure complexity in exchange for dramatically lower 
                              │ HTTP (localhost only)
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  DigitalOcean Droplet ($4-6/mo)                                 │
+│  VPS (e.g. DigitalOcean Droplet, $4-6/mo)                       │
 │  ┌───────────────────────────────────────────────────────────┐  │
 │  │  ai-cli-bridge (Express server, managed by PM2)           │  │
 │  │  - Per-user key auth (SHA-256 hashed, timing-safe)        │  │
@@ -82,7 +82,7 @@ The tradeoff: more infrastructure complexity in exchange for dramatically lower 
 
 ### Why This Stack
 
-- **DigitalOcean Droplet ($4-6/mo):** The CLIs call remote APIs, so CPU/RAM needs are minimal. Cheapest tier works fine.
+- **Any cheap VPS ($4-6/mo):** The CLIs call remote APIs, so CPU/RAM needs are minimal. DigitalOcean, Hetzner, Linode, etc. all work.
 - **Cloudflare Tunnel:** Eliminates the need to open any ports on the droplet. All traffic flows through Cloudflare's network. Free TLS, free DDoS protection, and a clean domain name.
 - **PM2:** Process manager that auto-restarts the server on crash and survives reboots via systemd integration.
 - **Express:** Minimal HTTP framework. The server is ~260 lines — just middleware, validation, and CLI invocation.
