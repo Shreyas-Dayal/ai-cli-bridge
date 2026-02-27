@@ -1,4 +1,6 @@
 import { execFile } from 'child_process';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 export interface CodexRequest {
   systemPrompt: string;
@@ -16,13 +18,15 @@ export interface CodexResponse {
   cost_usd: number;
 }
 
-// Pricing per 1M tokens
-const CODEX_PRICING: Record<string, { input: number; cached: number; output: number }> = {
-  'gpt-5.3-codex':      { input: 1.75,  cached: 0.175, output: 14.00 },
-  'gpt-5.2-codex':      { input: 1.75,  cached: 0.175, output: 14.00 },
-  'gpt-5-codex':        { input: 1.25,  cached: 0.125, output: 10.00 },
-  'gpt-5.1-codex-mini': { input: 0.25,  cached: 0.025, output: 2.00  },
-};
+// Pricing per 1M tokens — loaded from codex-pricing.json at startup.
+// Edit that file to update prices without changing source code.
+let CODEX_PRICING: Record<string, { input: number; cached: number; output: number }> = {};
+try {
+  const pricingPath = join(process.cwd(), 'codex-pricing.json');
+  CODEX_PRICING = JSON.parse(readFileSync(pricingPath, 'utf-8'));
+} catch {
+  console.warn('[codex] codex-pricing.json not found or invalid — cost estimation disabled');
+}
 
 function estimateCost(model: string, input: number, cached: number, output: number): number {
   const pricing = CODEX_PRICING[model];
