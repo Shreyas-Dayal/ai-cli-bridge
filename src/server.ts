@@ -14,6 +14,7 @@ app.set('trust proxy', 1); // Trust first proxy (Cloudflare Tunnel)
 const keyManager = new KeyManager(config.dataDir);
 
 const MAX_PROMPT_LENGTH = 500_000;
+const KEY_NAME_REGEX = /^[a-zA-Z0-9_-]{1,50}$/;
 
 // Graceful shutdown
 process.on('SIGTERM', () => { keyManager.shutdown(); process.exit(0); });
@@ -84,6 +85,18 @@ adminRouter.post('/keys', (req, res) => {
     return;
   }
 
+  if (!KEY_NAME_REGEX.test(name)) {
+    res.status(400).json({ error: 'name must be 1-50 alphanumeric characters, hyphens, or underscores' });
+    return;
+  }
+
+  const limits = { maxRequestsPerDay, maxRequestsPerMonth, maxTokensPerMonth, maxCostPerDay, maxCostPerMonth };
+  const limitError = validateLimits(limits);
+  if (limitError) {
+    res.status(400).json({ error: limitError });
+    return;
+  }
+
   try {
     const rawKey = keyManager.createKey(name, {
       maxRequestsPerDay: maxRequestsPerDay ?? 0,
@@ -117,6 +130,13 @@ adminRouter.get('/keys/:name', (req, res) => {
 // Update a key's limits
 adminRouter.patch('/keys/:name', (req, res) => {
   const { maxRequestsPerDay, maxRequestsPerMonth, maxTokensPerMonth, maxCostPerDay, maxCostPerMonth } = req.body;
+
+  const limitError = validateLimits({ maxRequestsPerDay, maxRequestsPerMonth, maxTokensPerMonth, maxCostPerDay, maxCostPerMonth });
+  if (limitError) {
+    res.status(400).json({ error: limitError });
+    return;
+  }
+
   const updated = keyManager.updateLimits(req.params.name, {
     maxRequestsPerDay,
     maxRequestsPerMonth,
@@ -164,6 +184,19 @@ app.use('/admin', adminRouter);
 // ── User routes (per-user key auth) ──────────────────────────────────────────
 
 app.use(keyAuthMiddleware(keyManager));
+
+// ── Limit validation ─────────────────────────────────────────────────────────
+
+function validateLimits(limits: Record<string, unknown>): string | null {
+  for (const [key, value] of Object.entries(limits)) {
+    if (value !== undefined && value !== null) {
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+        return `${key} must be a non-negative number`;
+      }
+    }
+  }
+  return null;
+}
 
 // ── Input validation ─────────────────────────────────────────────────────────
 
@@ -244,7 +277,8 @@ app.post('/generate', async (req, res) => {
 
     logRequest('Claude', usedModel, req.keyName, result.usage, result.cost_usd, result.duration_ms);
     res.json(result);
-  } catch {
+  } catch (err) {
+    console.error('[generate] Claude generation error:', err instanceof Error ? err.message : err);
     res.status(500).json({ error: 'Generation failed' });
   }
 });
@@ -288,7 +322,8 @@ app.post('/generate-codex', async (req, res) => {
 
     logRequest('Codex', usedModel, req.keyName, result.usage, result.cost_usd);
     res.json(result);
-  } catch {
+  } catch (err) {
+    console.error('[generate-codex] Codex generation error:', err instanceof Error ? err.message : err);
     res.status(500).json({ error: 'Generation failed' });
   }
 });
