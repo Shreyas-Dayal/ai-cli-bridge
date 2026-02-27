@@ -129,15 +129,27 @@ export class KeyManager {
   }
 
   private saveKeys(): void {
-    writeFileSync(this.keysFile, JSON.stringify(this.keys, null, 2), { mode: 0o600 });
+    try {
+      writeFileSync(this.keysFile, JSON.stringify(this.keys, null, 2), { mode: 0o600 });
+    } catch (err) {
+      console.error('[keys] Failed to persist keys.json:', err instanceof Error ? err.message : err);
+    }
   }
 
   private saveUsage(): void {
-    writeFileSync(this.usageFile, JSON.stringify(this.usage, null, 2), { mode: 0o600 });
+    try {
+      writeFileSync(this.usageFile, JSON.stringify(this.usage, null, 2), { mode: 0o600 });
+    } catch (err) {
+      console.error('[keys] Failed to persist usage.json:', err instanceof Error ? err.message : err);
+    }
   }
 
   private saveLogs(): void {
-    writeFileSync(this.logsFile, JSON.stringify(this.logs, null, 2), { mode: 0o600 });
+    try {
+      writeFileSync(this.logsFile, JSON.stringify(this.logs, null, 2), { mode: 0o600 });
+    } catch (err) {
+      console.error('[keys] Failed to persist logs.json:', err instanceof Error ? err.message : err);
+    }
   }
 
   // ── Hashing ──────────────────────────────────────────────────────────────
@@ -258,7 +270,8 @@ export class KeyManager {
 
   // ── Auth & Limits ────────────────────────────────────────────────────────
 
-  /** Validate key and check limits in one call. Returns hash so rawKey never needs to be stored. */
+  /** Validate key, check limits, and pre-increment the request counter atomically.
+   *  Pre-incrementing prevents concurrent requests from bypassing limits (TOCTOU). */
   validateAndCheck(rawKey: string): { name?: string; hash?: string; error?: string } {
     const incomingHash = this.hash(rawKey);
 
@@ -277,6 +290,10 @@ export class KeyManager {
     // Check limits
     const limitError = this.checkLimitsByHash(incomingHash, matchedEntry);
     if (limitError) return { error: limitError };
+
+    // Pre-increment request counter to prevent concurrent requests from bypassing limits.
+    // Token/cost counters are updated later in recordUsage() once values are known.
+    this.preIncrementRequest(incomingHash);
 
     return { name: matchedEntry.name, hash: incomingHash };
   }
@@ -325,7 +342,26 @@ export class KeyManager {
     return null;
   }
 
-  /** Record usage after a successful generation. Accepts pre-computed hash. */
+  /** Pre-increment the request counter during validation to prevent TOCTOU race conditions. */
+  private preIncrementRequest(keyHash: string): void {
+    const today = this.todayKey();
+    const month = this.monthKey();
+
+    if (!this.usage.usage[keyHash]) {
+      this.usage.usage[keyHash] = { daily: {}, monthly: {} };
+    }
+
+    const u = this.usage.usage[keyHash];
+    if (!u.daily[today]) u.daily[today] = { requests: 0, tokens: 0, costUsd: 0 };
+    if (!u.monthly[month]) u.monthly[month] = { requests: 0, tokens: 0, costUsd: 0 };
+
+    u.daily[today].requests++;
+    u.monthly[month].requests++;
+    this.dirty = true;
+  }
+
+  /** Record token/cost usage after a successful generation. Request counter is
+   *  already incremented by validateAndCheck() to prevent race conditions. */
   recordUsage(keyHash: string, inputTokens: number, outputTokens: number, costUsd: number): void {
     if (!this.keys.keys[keyHash]) return;
 
@@ -339,15 +375,13 @@ export class KeyManager {
 
     const u = this.usage.usage[keyHash];
 
-    // Daily
+    // Daily (request count already incremented in preIncrementRequest)
     if (!u.daily[today]) u.daily[today] = { requests: 0, tokens: 0, costUsd: 0 };
-    u.daily[today].requests++;
     u.daily[today].tokens += totalTokens;
     u.daily[today].costUsd = (u.daily[today].costUsd || 0) + costUsd;
 
-    // Monthly
+    // Monthly (request count already incremented in preIncrementRequest)
     if (!u.monthly[month]) u.monthly[month] = { requests: 0, tokens: 0, costUsd: 0 };
-    u.monthly[month].requests++;
     u.monthly[month].tokens += totalTokens;
     u.monthly[month].costUsd = (u.monthly[month].costUsd || 0) + costUsd;
 
