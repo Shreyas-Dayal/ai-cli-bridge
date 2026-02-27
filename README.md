@@ -4,6 +4,8 @@ Turn your **Claude Max** / **OpenAI Pro** subscriptions into a private HTTP API 
 
 This server wraps the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) and [Codex CLI](https://github.com/openai/codex) behind an Express API. Instead of paying per-token, requests are backed by your existing subscription.
 
+![Admin Dashboard](screenshot.png)
+
 ## Why
 
 AI API calls are expensive at scale. If you already pay for Claude Max (~$100-200/mo) or OpenAI Pro (~$200/mo), that usage is locked to the CLI tools — they can't be called from web apps, plugins, or other HTTP clients. This project bridges that gap.
@@ -20,7 +22,7 @@ AI API calls are expensive at scale. If you already pay for Claude Max (~$100-20
 - **Per-key usage limits** — requests/day, requests/month, tokens/month, cost/day, cost/month
 - **Admin dashboard** — manage keys, monitor usage, view request logs
 - **Usage tracking** — in-memory with periodic disk flush, auto-pruning
-- **Security** — `execFile` (no shell injection), temp file permissions, rate limiting, security headers
+- **Security** — `execFile` (no shell injection), CSP, HSTS, rate limiting, input validation
 - **Deploy anywhere** — Docker support, PM2 config, Cloudflare Tunnel template
 
 ## Quick Start
@@ -77,7 +79,7 @@ curl -X POST http://localhost:3456/generate-codex \
 
 ### Response Shape
 
-All endpoints return an Anthropic Messages API-compatible response:
+Both endpoints return a consistent response shape:
 
 ```json
 {
@@ -86,10 +88,11 @@ All endpoints return an Anthropic Messages API-compatible response:
     "input_tokens": 1234,
     "output_tokens": 56
   },
-  "cost_usd": 0.003,
-  "duration_ms": 4500
+  "cost_usd": 0.003
 }
 ```
+
+Claude responses also include `duration_ms`, `cache_creation_input_tokens`, and `cache_read_input_tokens`. Codex cost is estimated from a built-in pricing table.
 
 ## API Endpoints
 
@@ -126,7 +129,7 @@ curl -X POST http://localhost:3456/admin/keys \
 
 The raw key is returned **once** — save it. Only the SHA-256 hash is stored on disk.
 
-All limits default to `0` (unlimited). Available limits: `maxRequestsPerDay`, `maxRequestsPerMonth`, `maxTokensPerMonth`, `maxCostPerDay`, `maxCostPerMonth`.
+Key names must be 1-50 characters: alphanumeric, hyphens, and underscores only. All limits default to `0` (unlimited). Available limits: `maxRequestsPerDay`, `maxRequestsPerMonth`, `maxTokensPerMonth`, `maxCostPerDay`, `maxCostPerMonth`.
 
 ## Deployment
 
@@ -141,28 +144,52 @@ All settings are via environment variables. See [`.env.example`](.env.example) f
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `3456` | Server port |
-| `BRIDGE_ADMIN_KEY` | — | Admin key for `/admin/*` endpoints |
+| `BRIDGE_ADMIN_KEY` | — | **Required.** Admin key for `/admin/*` endpoints |
 | `DATA_DIR` | `./data` | Directory for keys.json, usage.json, logs.json |
 | `CORS_ORIGINS` | — | Comma-separated origins (empty = allow all) |
-| `RATE_LIMIT_WINDOW_MS` | `60000` | Rate limit window |
+| `RATE_LIMIT_WINDOW_MS` | `60000` | Rate limit window (ms) |
 | `RATE_LIMIT_MAX_REQUESTS` | `30` | Max requests per window |
 | `CLAUDE_DEFAULT_MODEL` | `claude-sonnet-4-20250514` | Default Claude model |
+| `CLAUDE_TIMEOUT_MS` | `120000` | Claude CLI timeout (ms) |
+| `CLAUDE_MAX_BUFFER_BYTES` | `10485760` | Claude CLI max stdout buffer |
 | `CODEX_DEFAULT_MODEL` | `gpt-5.3-codex` | Default Codex model |
+| `CODEX_TIMEOUT_MS` | `180000` | Codex CLI timeout (ms) |
+| `CODEX_MAX_BUFFER_BYTES` | `10485760` | Codex CLI max stdout buffer |
+
+## Security
+
+- **No shell injection** — CLI invocations use `execFile` (array args, no shell)
+- **Timing-safe auth** — `crypto.timingSafeEqual` for key comparison
+- **Security headers** — CSP, HSTS, X-Frame-Options DENY, Referrer-Policy, Permissions-Policy
+- **Rate limiting** — global limiter + separate admin endpoint limiter
+- **Input validation** — key name format, non-negative limits, prompt length cap (500K chars)
+- **File permissions** — data files written with `0o600` (owner-only)
+
+See [SECURITY.md](SECURITY.md) for vulnerability reporting and deployment hardening guidance.
 
 ## Project Structure
 
 ```
 src/
-  server.ts             Express app, routes, middleware
-  config.ts             Environment variable parsing
-  keys.ts               Key CRUD, usage tracking, limits
-  middleware/auth.ts     Per-user + admin auth (timing-safe)
+  server.ts               Express app, routes, middleware
+  config.ts               Environment variable parsing
+  keys.ts                 Key CRUD, usage tracking, limits
+  middleware/auth.ts       Per-user + admin auth (timing-safe)
   providers/
-    claude.ts           Claude Code CLI wrapper
-    codex.ts            Codex CLI wrapper
-public/                 Admin dashboard (HTML/CSS/JS)
-data/                   Runtime data (gitignored)
+    claude.ts             Claude Code CLI wrapper
+    codex.ts              Codex CLI wrapper
+public/                   Admin dashboard (HTML/CSS/JS)
+data/                     Runtime data (gitignored)
+Dockerfile                Docker image definition
+docker-compose.yml        Docker orchestration
+ecosystem.config.cjs      PM2 process manager config
+cloudflared-config.yml    Cloudflare Tunnel template
+.github/workflows/ci.yml  CI build check on push/PR
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR guidelines.
 
 ## License
 
