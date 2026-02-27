@@ -2,12 +2,13 @@
   'use strict';
 
   // ── State ──
-  let adminKey = sessionStorage.getItem('bridge_admin_key') || '';
+  let adminKey = '';
   let keys = [];
   let logs = [];
   let refreshInterval = null;
   let countdownInterval = null;
   let countdown = 30;
+  let activeModalKeyName = null; // Track which key the current modal is for
 
   // ── DOM ──
   const $ = (s) => document.querySelector(s);
@@ -102,6 +103,7 @@
   function closeModal() {
     modalOverlay.classList.remove('active');
     modalContent.innerHTML = '';
+    activeModalKeyName = null;
   }
 
   modalOverlay.addEventListener('click', (e) => {
@@ -110,6 +112,20 @@
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeModal();
+  });
+
+  // ── Event delegation for modal buttons ──
+  modalContent.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+
+    if (action === 'close') closeModal();
+    else if (action === 'submit-create') submitCreate();
+    else if (action === 'copy-key') copyKey();
+    else if (action === 'submit-edit') submitEdit(activeModalKeyName);
+    else if (action === 'confirm-delete') confirmDelete(activeModalKeyName);
+    else if (action === 'confirm-reset') confirmReset(activeModalKeyName);
   });
 
   // ── Auth ──
@@ -123,7 +139,6 @@
 
     try {
       await api('GET', '/keys');
-      sessionStorage.setItem('bridge_admin_key', adminKey);
       showDashboard();
     } catch (err) {
       loginError.textContent = 'Authentication failed \u2014 invalid key';
@@ -136,7 +151,7 @@
   function logout() {
     adminKey = '';
     keys = [];
-    sessionStorage.removeItem('bridge_admin_key');
+    activeModalKeyName = null;
     clearInterval(refreshInterval);
     clearInterval(countdownInterval);
     dashboardView.style.display = 'none';
@@ -216,6 +231,17 @@
     `;
   }
 
+  // ── Escaping ──
+  function esc(s) {
+    const el = document.createElement('span');
+    el.textContent = s;
+    return el.innerHTML;
+  }
+
+  function escAttr(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
   // ── Table ──
   function renderTable() {
     if (keys.length === 0) {
@@ -258,20 +284,26 @@
         </td>
         <td>
           <div class="actions">
-            <button class="btn btn-sm" onclick="app.editLimits('${esc(k.name)}')">Edit</button>
-            <button class="btn btn-sm btn-warn" onclick="app.resetUsage('${esc(k.name)}')">Reset</button>
-            <button class="btn btn-sm btn-danger" onclick="app.deleteKey('${esc(k.name)}')">Delete</button>
+            <button class="btn btn-sm" data-key-action="edit" data-key-name="${escAttr(k.name)}">Edit</button>
+            <button class="btn btn-sm btn-warn" data-key-action="reset" data-key-name="${escAttr(k.name)}">Reset</button>
+            <button class="btn btn-sm btn-danger" data-key-action="delete" data-key-name="${escAttr(k.name)}">Delete</button>
           </div>
         </td>
       </tr>`;
     }).join('');
   }
 
-  function esc(s) {
-    const el = document.createElement('span');
-    el.textContent = s;
-    return el.innerHTML;
-  }
+  // ── Event delegation for key table buttons ──
+  keyTableBody.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-key-action]');
+    if (!btn) return;
+    const action = btn.dataset.keyAction;
+    const name = btn.dataset.keyName;
+
+    if (action === 'edit') editLimits(name);
+    else if (action === 'reset') resetUsage(name);
+    else if (action === 'delete') deleteKey(name);
+  });
 
   // ── Logs ──
   async function loadLogs() {
@@ -309,10 +341,10 @@
     logTableBody.innerHTML = logs.map(l => `<tr>
       <td style="white-space: nowrap; font-family: var(--mono); font-size: 11px; color: var(--text-dim);">${fmtTime(l.timestamp)}</td>
       <td><span class="key-name" style="font-size: 12px;">${esc(l.keyName)}</span></td>
-      <td><span class="provider-badge ${l.provider}">${esc(l.provider)}</span></td>
+      <td><span class="provider-badge ${esc(l.provider)}">${esc(l.provider)}</span></td>
       <td style="font-family: var(--mono); font-size: 11px; color: var(--text-dim);">${esc(l.model)}</td>
-      <td><div class="prompt-cell" title="${esc(l.systemPrompt)}">${esc(l.systemPrompt)}</div></td>
-      <td><div class="prompt-cell" title="${esc(l.userPrompt)}">${esc(l.userPrompt)}</div></td>
+      <td><div class="prompt-cell" title="${escAttr(l.systemPrompt)}">${esc(l.systemPrompt)}</div></td>
+      <td><div class="prompt-cell" title="${escAttr(l.userPrompt)}">${esc(l.userPrompt)}</div></td>
       <td style="font-family: var(--mono); font-size: 11px; white-space: nowrap;">
         <span style="color: var(--text-dim);">${fmtNum(l.inputTokens)}</span>
         <span style="color: var(--text-muted);"> / </span>
@@ -325,10 +357,11 @@
 
   // ── Create Key ──
   function showCreateModal() {
+    activeModalKeyName = null;
     openModal(`
       <div class="modal-head">
         <h3>Create Key</h3>
-        <button class="modal-close" onclick="app.closeModal()">&times;</button>
+        <button class="modal-close" data-action="close">&times;</button>
       </div>
       <div class="modal-body">
         <div class="field">
@@ -367,8 +400,8 @@
         <div id="createResult"></div>
       </div>
       <div class="modal-foot">
-        <button class="btn" onclick="app.closeModal()">Cancel</button>
-        <button class="btn btn-primary" id="createSubmitBtn" onclick="app.submitCreate()">Create</button>
+        <button class="btn" data-action="close">Cancel</button>
+        <button class="btn btn-primary" id="createSubmitBtn" data-action="submit-create">Create</button>
       </div>
     `);
     setTimeout(() => document.getElementById('createName')?.focus(), 100);
@@ -396,12 +429,12 @@
         <div class="key-reveal">
           <div class="warn">Save this key \u2014 it cannot be retrieved again</div>
           <div class="key-text" id="revealedKey">${esc(data.key)}</div>
-          <button class="btn btn-primary btn-sm btn-full" onclick="app.copyKey()">Copy to Clipboard</button>
+          <button class="btn btn-primary btn-sm btn-full" data-action="copy-key">Copy to Clipboard</button>
         </div>
       `;
 
       btn.textContent = 'Created';
-      document.querySelector('.modal-foot').innerHTML = '<button class="btn btn-primary" onclick="app.closeModal()">Done</button>';
+      document.querySelector('.modal-foot').innerHTML = '<button class="btn btn-primary" data-action="close">Done</button>';
 
       toast('Key created for "' + name + '"');
       loadKeys();
@@ -424,11 +457,12 @@
     const k = keys.find(k => k.name === name);
     if (!k) return;
     const l = k.limits || {};
+    activeModalKeyName = name;
 
     openModal(`
       <div class="modal-head">
         <h3>Edit Limits \u2014 ${esc(name)}</h3>
-        <button class="modal-close" onclick="app.closeModal()">&times;</button>
+        <button class="modal-close" data-action="close">&times;</button>
       </div>
       <div class="modal-body">
         <div class="field-row">
@@ -461,8 +495,8 @@
         </div>
       </div>
       <div class="modal-foot">
-        <button class="btn" onclick="app.closeModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="app.submitEdit('${esc(name)}')">Save</button>
+        <button class="btn" data-action="close">Cancel</button>
+        <button class="btn btn-primary" data-action="submit-edit">Save</button>
       </div>
     `);
   }
@@ -486,17 +520,18 @@
 
   // ── Delete ──
   function deleteKey(name) {
+    activeModalKeyName = name;
     openModal(`
       <div class="modal-head">
         <h3>Delete Key</h3>
-        <button class="modal-close" onclick="app.closeModal()">&times;</button>
+        <button class="modal-close" data-action="close">&times;</button>
       </div>
       <div class="modal-body">
         <p class="confirm-text">Permanently delete key <strong>"${esc(name)}"</strong> and all its usage data? This cannot be undone.</p>
       </div>
       <div class="modal-foot">
-        <button class="btn" onclick="app.closeModal()">Cancel</button>
-        <button class="btn btn-danger" onclick="app.confirmDelete('${esc(name)}')">Delete</button>
+        <button class="btn" data-action="close">Cancel</button>
+        <button class="btn btn-danger" data-action="confirm-delete">Delete</button>
       </div>
     `);
   }
@@ -514,17 +549,18 @@
 
   // ── Reset Usage ──
   function resetUsage(name) {
+    activeModalKeyName = name;
     openModal(`
       <div class="modal-head">
         <h3>Reset Usage</h3>
-        <button class="modal-close" onclick="app.closeModal()">&times;</button>
+        <button class="modal-close" data-action="close">&times;</button>
       </div>
       <div class="modal-body">
         <p class="confirm-text">Reset all usage counters for <strong>"${esc(name)}"</strong> to zero? This clears today and monthly tallies.</p>
       </div>
       <div class="modal-foot">
-        <button class="btn" onclick="app.closeModal()">Cancel</button>
-        <button class="btn btn-warn" onclick="app.confirmReset('${esc(name)}')">Reset</button>
+        <button class="btn" data-action="close">Cancel</button>
+        <button class="btn btn-warn" data-action="confirm-reset">Reset</button>
       </div>
     `);
   }
@@ -556,15 +592,4 @@
 
   // Populate base URL
   baseUrlTag.textContent = window.location.origin;
-
-  // ── Public API for inline handlers ──
-  window.app = {
-    closeModal, editLimits, submitEdit, deleteKey, confirmDelete,
-    resetUsage, confirmReset, submitCreate, copyKey,
-  };
-
-  // ── Init ──
-  if (adminKey) {
-    showDashboard();
-  }
 })();
