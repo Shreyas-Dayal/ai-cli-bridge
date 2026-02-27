@@ -67,7 +67,8 @@ export function generateWithCodex(
       maxBuffer: cfg.maxBuffer,
     }, (error, stdout) => {
       if (error) {
-        console.error('[codex] CLI execution failed');
+        console.error('[codex] CLI execution failed:', error.message);
+        try { child.kill(); } catch { /* already exited */ }
         reject(new Error('Codex generation failed'));
         return;
       }
@@ -114,9 +115,14 @@ export function generateWithCodex(
       });
     });
 
-    if (child.stdin) {
-      child.stdin.write(fullPrompt);
-      child.stdin.end();
+    try {
+      if (child.stdin) {
+        child.stdin.write(fullPrompt);
+        child.stdin.end();
+      }
+    } catch (err) {
+      try { child.kill(); } catch { /* already exited */ }
+      reject(new Error('Failed to write prompt to CLI stdin'));
     }
   });
 }

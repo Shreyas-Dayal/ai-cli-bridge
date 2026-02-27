@@ -76,7 +76,8 @@ export function generateWithClaude(
       try { unlinkSync(tmpFile); } catch { /* ignore */ }
 
       if (error) {
-        console.error('[claude] CLI execution failed');
+        console.error('[claude] CLI execution failed:', error.message);
+        try { child.kill(); } catch { /* already exited */ }
         reject(new Error('Claude generation failed'));
         return;
       }
@@ -127,9 +128,15 @@ export function generateWithClaude(
       });
     });
 
-    if (child.stdin) {
-      child.stdin.write(req.userPrompt);
-      child.stdin.end();
+    try {
+      if (child.stdin) {
+        child.stdin.write(req.userPrompt);
+        child.stdin.end();
+      }
+    } catch (err) {
+      try { child.kill(); } catch { /* already exited */ }
+      try { unlinkSync(tmpFile); } catch { /* ignore */ }
+      reject(new Error('Failed to write prompt to CLI stdin'));
     }
   });
 }
