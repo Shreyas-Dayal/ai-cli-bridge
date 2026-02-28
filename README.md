@@ -139,22 +139,24 @@ See [GUIDE.md](GUIDE.md) for a complete step-by-step deployment walkthrough, and
 
 ## Configuration
 
-All settings are via environment variables. See [`.env.example`](.env.example) for the full list.
+All settings are via environment variables. See [`.env.example`](.env.example) for the full list. Invalid values (e.g. `PORT=abc`) will cause the server to fail fast on startup with a clear error message.
 
 | Variable | Default | Description |
 |---|---|---|
-| `PORT` | `3456` | Server port |
+| `PORT` | `3456` | Server port (1-65535) |
 | `BRIDGE_ADMIN_KEY` | — | **Required.** Admin key for `/admin/*` endpoints |
 | `DATA_DIR` | `./data` | Directory for keys.json, usage.json, logs.json |
 | `CORS_ORIGINS` | — | Comma-separated origins (empty = allow all) |
-| `RATE_LIMIT_WINDOW_MS` | `60000` | Rate limit window (ms) |
-| `RATE_LIMIT_MAX_REQUESTS` | `30` | Max requests per window |
+| `RATE_LIMIT_WINDOW_MS` | `60000` | Rate limit window in ms (min 1000) |
+| `RATE_LIMIT_MAX_REQUESTS` | `30` | Max requests per window (min 1) |
 | `CLAUDE_DEFAULT_MODEL` | `claude-sonnet-4-20250514` | Default Claude model |
-| `CLAUDE_TIMEOUT_MS` | `120000` | Claude CLI timeout (ms) |
-| `CLAUDE_MAX_BUFFER_BYTES` | `10485760` | Claude CLI max stdout buffer |
+| `CLAUDE_TIMEOUT_MS` | `120000` | Claude CLI timeout in ms (min 1000) |
+| `CLAUDE_MAX_BUFFER_BYTES` | `10485760` | Claude CLI max stdout buffer (min 1024) |
 | `CODEX_DEFAULT_MODEL` | `gpt-5.3-codex` | Default Codex model |
-| `CODEX_TIMEOUT_MS` | `180000` | Codex CLI timeout (ms) |
-| `CODEX_MAX_BUFFER_BYTES` | `10485760` | Codex CLI max stdout buffer |
+| `CODEX_TIMEOUT_MS` | `180000` | Codex CLI timeout in ms (min 1000) |
+| `CODEX_MAX_BUFFER_BYTES` | `10485760` | Codex CLI max stdout buffer (min 1024) |
+
+Codex cost estimation uses pricing from [`codex-pricing.json`](codex-pricing.json). Edit that file when prices change — no rebuild needed, just restart. Claude CLI returns cost directly.
 
 ## Security
 
@@ -180,12 +182,22 @@ src/
     codex.ts              Codex CLI wrapper
 public/                   Admin dashboard (HTML/CSS/JS)
 data/                     Runtime data (gitignored)
+codex-pricing.json        Codex model pricing (editable, no rebuild)
 Dockerfile                Docker image definition
 docker-compose.yml        Docker orchestration
 ecosystem.config.cjs      PM2 process manager config
 cloudflared-config.yml    Cloudflare Tunnel template
 .github/workflows/ci.yml  CI build check on push/PR
 ```
+
+## Disclaimer
+
+**This project may violate the Terms of Service of the underlying CLI providers.** You are responsible for reviewing and complying with the applicable terms before using this software.
+
+- **Anthropic** — As of February 2026, Anthropic's [Consumer Terms of Service](https://www.anthropic.com/legal/consumer-terms) prohibit using OAuth tokens from Free, Pro, or Max subscriptions in any third-party product, tool, or service. Wrapping the Claude Code CLI behind an HTTP API and sharing access with other users likely falls under this prohibition. See [Anthropic's policy clarification](https://www.theregister.com/2026/02/20/anthropic_clarifies_ban_third_party_claude_access/) for details.
+- **OpenAI** — OpenAI's [Terms of Use](https://openai.com/policies/row-terms-of-use/) prohibit sharing account credentials and reselling access. Exposing a Codex CLI subscription as a multi-user API may constitute account sharing.
+
+This project is provided as-is for **educational and experimental purposes**. The authors are not responsible for any consequences arising from its use. If the providers update their terms or enforcement, your access may be revoked without notice.
 
 ## Contributing
 
