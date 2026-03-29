@@ -394,18 +394,14 @@ SSH in and run:
 ssh ai-bridge
 
 # System packages
-apt-get update -qq && apt-get install -y -qq curl git
-
-# Node.js (needed for CLI tools)
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y -qq nodejs
+apt-get update -qq && apt-get install -y -qq curl git unzip
 
 # Bun
 curl -fsSL https://bun.sh/install | bash
 source ~/.bashrc
 
 # AI CLIs
-npm install -g @anthropic-ai/claude-code @openai/codex
+bun install -g @anthropic-ai/claude-code @openai/codex
 
 # Cloudflared
 curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
