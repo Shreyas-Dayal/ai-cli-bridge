@@ -8,12 +8,12 @@ set -euo pipefail
 echo "=== ai-cli-bridge: DigitalOcean + Cloudflare Tunnel setup ==="
 
 # ── 1. System packages ───────────────────────────────────────────────────────
-echo "[1/6] Installing system packages..."
+echo "[1/5] Installing system packages..."
 apt-get update -qq
 apt-get install -y -qq curl git
 
-# ── 2. Node.js 20 (needed for PM2 and CLI tools) ────────────────────────────
-echo "[2/6] Installing Node.js 20..."
+# ── 2. Node.js 20 (needed for CLI tools) ─────────────────────────────────────
+echo "[2/5] Installing Node.js 20..."
 if ! command -v node &> /dev/null; then
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   apt-get install -y -qq nodejs
@@ -29,15 +29,11 @@ fi
 echo "  Bun: $(bun --version)"
 
 # ── 3. CLIs ──────────────────────────────────────────────────────────────────
-echo "[3/6] Installing Claude Code CLI and Codex CLI..."
+echo "[3/5] Installing Claude Code CLI and Codex CLI..."
 npm install -g @anthropic-ai/claude-code @openai/codex
 
-# ── 4. PM2 for process management ────────────────────────────────────────────
-echo "[4/6] Installing PM2..."
-npm install -g pm2
-
-# ── 5. Cloudflare Tunnel (cloudflared) ────────────────────────────────────────
-echo "[5/6] Installing cloudflared..."
+# ── 4. Cloudflare Tunnel (cloudflared) ────────────────────────────────────────
+echo "[4/5] Installing cloudflared..."
 if ! command -v cloudflared &> /dev/null; then
   curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
   dpkg -i /tmp/cloudflared.deb
@@ -46,7 +42,7 @@ fi
 echo "  cloudflared: $(cloudflared --version)"
 
 echo ""
-echo "[6/6] Done! Next steps:"
+echo "[5/6] Done! Next steps:"
 echo ""
 echo "  1. Clone your repo and install:"
 echo "     git clone <your-repo> /opt/ai-cli-bridge"
@@ -60,9 +56,10 @@ echo "  3. Configure env:"
 echo "     cp .env.example .env"
 echo "     # Edit .env — set BRIDGE_API_KEYS"
 echo ""
-echo "  4. Start with PM2:"
-echo "     pm2 start ecosystem.config.cjs --name ai-cli-bridge"
-echo "     pm2 save && pm2 startup"
+echo "  4. Start with systemd:"
+echo "     cp /opt/ai-cli-bridge/ai-cli-bridge.service /etc/systemd/system/"
+echo "     systemctl daemon-reload"
+echo "     systemctl enable --now ai-cli-bridge"
 echo ""
 echo "  5. Create Cloudflare Tunnel:"
 echo "     cloudflared tunnel login"
