@@ -12,7 +12,7 @@ echo "[1/6] Installing system packages..."
 apt-get update -qq
 apt-get install -y -qq curl git
 
-# ── 2. Node.js 20 ────────────────────────────────────────────────────────────
+# ── 2. Node.js 20 (needed for PM2 and CLI tools) ────────────────────────────
 echo "[2/6] Installing Node.js 20..."
 if ! command -v node &> /dev/null; then
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -20,10 +20,17 @@ if ! command -v node &> /dev/null; then
 fi
 echo "  Node: $(node --version)"
 
-# ── 3. pnpm + CLIs ───────────────────────────────────────────────────────────
-echo "[3/6] Installing pnpm, Claude Code CLI, Codex CLI..."
-npm install -g pnpm @anthropic-ai/claude-code @openai/codex
-echo "  pnpm: $(pnpm --version)"
+# ── Bun (server runtime) ─────────────────────────────────────────────────────
+echo "Installing Bun..."
+if ! command -v bun &> /dev/null; then
+  curl -fsSL https://bun.sh/install | bash
+  source "$HOME/.bun/env"
+fi
+echo "  Bun: $(bun --version)"
+
+# ── 3. CLIs ──────────────────────────────────────────────────────────────────
+echo "[3/6] Installing Claude Code CLI and Codex CLI..."
+npm install -g @anthropic-ai/claude-code @openai/codex
 
 # ── 4. PM2 for process management ────────────────────────────────────────────
 echo "[4/6] Installing PM2..."
@@ -43,7 +50,7 @@ echo "[6/6] Done! Next steps:"
 echo ""
 echo "  1. Clone your repo and install:"
 echo "     git clone <your-repo> /opt/ai-cli-bridge"
-echo "     cd /opt/ai-cli-bridge && pnpm install && pnpm build"
+echo "     cd /opt/ai-cli-bridge && bun install && bun run build"
 echo ""
 echo "  2. Authenticate the CLIs (one-time, interactive):"
 echo "     claude          # Follow OAuth flow for Claude Max"
@@ -54,7 +61,7 @@ echo "     cp .env.example .env"
 echo "     # Edit .env — set BRIDGE_API_KEYS"
 echo ""
 echo "  4. Start with PM2:"
-echo "     pm2 start dist/server.js --name ai-cli-bridge"
+echo "     pm2 start ecosystem.config.cjs --name ai-cli-bridge"
 echo "     pm2 save && pm2 startup"
 echo ""
 echo "  5. Create Cloudflare Tunnel:"
