@@ -1,0 +1,21 @@
+[Unit]
+Description=ai-cli-bridge
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ai-cli-bridge
+ExecStart=/root/.bun/bin/bun src/server.ts
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=10
+MemoryMax=256M
+EnvironmentFile=/opt/ai-cli-bridge/.env
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ai-cli-bridge
+
+[Install]
+WantedBy=multi-user.target
