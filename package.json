@@ -33,7 +33,6 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "dotenv": "^17.3.1",
     "express": "^4.21.0",
     "express-rate-limit": "^7.5.0"
   },
