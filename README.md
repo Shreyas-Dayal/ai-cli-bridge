@@ -29,8 +29,7 @@ AI API calls are expensive at scale. If you already pay for Claude Max (~$100-20
 
 ### Prerequisites
 
-- Node.js 20+
-- pnpm
+- [Bun](https://bun.sh) 1.2+
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) and/or [Codex CLI](https://github.com/openai/codex) installed and authenticated
 
 ### Local Development
@@ -38,9 +37,9 @@ AI API calls are expensive at scale. If you already pay for Claude Max (~$100-20
 ```bash
 git clone https://github.com/Shreyas-Dayal/ai-cli-bridge.git
 cd ai-cli-bridge
-pnpm install
+bun install
 cp .env.example .env    # Edit to set BRIDGE_ADMIN_KEY
-pnpm dev                # Starts on http://localhost:3456
+bun dev                 # Starts on http://localhost:3456
 ```
 
 ### Docker

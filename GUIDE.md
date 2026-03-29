@@ -396,12 +396,12 @@ ssh ai-bridge
 # System packages
 apt-get update -qq && apt-get install -y -qq curl git
 
-# Node.js 20
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y -qq nodejs
+# Bun
+curl -fsSL https://bun.sh/install | bash
+source ~/.bashrc
 
-# pnpm, PM2, AI CLIs
-npm install -g pnpm pm2 @anthropic-ai/claude-code @openai/codex
+# PM2, AI CLIs
+npm install -g pm2 @anthropic-ai/claude-code @openai/codex
 
 # Cloudflared
 curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
@@ -421,8 +421,8 @@ On the droplet:
 
 ```bash
 cd /opt/ai-cli-bridge
-pnpm install
-pnpm build
+bun install
+bun run build
 ```
 
 ### 5. Configure Environment
@@ -743,14 +743,14 @@ From your local machine:
 
 ```bash
 # After making changes locally
-pnpm build  # Verify it compiles
+bun run build  # Verify it compiles
 
 # Deploy
 rsync -avz --exclude node_modules --exclude .env --exclude data \
   ./ai-cli-bridge/ ai-bridge:/opt/ai-cli-bridge/
 
 # Restart on the droplet
-ssh ai-bridge 'cd /opt/ai-cli-bridge && pnpm install --frozen-lockfile && pm2 restart ai-cli-bridge'
+ssh ai-bridge 'cd /opt/ai-cli-bridge && bun install --frozen-lockfile && pm2 restart ai-cli-bridge'
 ```
 
 ### Re-authenticating CLIs

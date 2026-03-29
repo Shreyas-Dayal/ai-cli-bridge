@@ -18,7 +18,7 @@ From the local project directory:
 
 ```bash
 # 1. Build locally (verify no TypeScript errors)
-pnpm run build
+bun run build
 
 # 2. Sync files to server (excludes node_modules, .env, data, .git)
 rsync -avz --exclude node_modules --exclude .env --exclude data --exclude .git \
@@ -38,13 +38,13 @@ rsync -avz ./public/ <YOUR_SERVER>:/path/to/ai-cli-bridge/public/
 
 ### Dependency Changes (package.json updated)
 
-If `package.json` or `pnpm-lock.yaml` changed, install on the server before restarting:
+If `package.json` or `bun.lock` changed, install on the server before restarting:
 
 ```bash
 rsync -avz --exclude node_modules --exclude .env --exclude data --exclude .git \
   ./ <YOUR_SERVER>:/path/to/ai-cli-bridge/
 
-ssh <YOUR_SERVER> "cd /path/to/ai-cli-bridge && pnpm install --frozen-lockfile && pm2 restart ai-cli-bridge"
+ssh <YOUR_SERVER> "cd /path/to/ai-cli-bridge && bun install --frozen-lockfile && pm2 restart ai-cli-bridge"
 ```
 
 ## Verify

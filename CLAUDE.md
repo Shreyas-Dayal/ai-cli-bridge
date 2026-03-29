@@ -6,9 +6,9 @@ HTTP bridge server wrapping Claude Code CLI and Codex CLI behind an Express API.
 
 ## Stack
 
-- **Runtime:** Node.js 20, TypeScript, ES modules
+- **Runtime:** Bun, TypeScript, ES modules
 - **Framework:** Express 4
-- **Package manager:** pnpm
+- **Package manager:** bun
 - **Process manager:** PM2 (cluster mode)
 - **Tunnel:** Cloudflare Tunnel (cloudflared)
 - **No database** — JSON file persistence (`data/keys.json`, `data/usage.json`, `data/logs.json`)
@@ -35,16 +35,16 @@ data/                 — Runtime data (gitignored, 0o600 permissions)
 ## Commands
 
 ```bash
-pnpm dev              # Dev server with watch (tsx)
-pnpm run build        # TypeScript compile (tsc)
-pnpm start            # Run via tsx
-pnpm start:prod       # Run compiled JS (node dist/server.js)
+bun dev               # Dev server with watch
+bun run build         # TypeScript compile (tsc)
+bun start             # Run via bun
+bun start:prod        # Run compiled JS (bun dist/server.js)
 ```
 
 ## Build & Deploy
 
 ```bash
-pnpm run build
+bun run build
 rsync -avz --exclude node_modules --exclude .env --exclude data --exclude .git \
   ./ <YOUR_SERVER>:/path/to/ai-cli-bridge/
 ssh <YOUR_SERVER> "pm2 restart ai-cli-bridge"
