@@ -1,7 +1,8 @@
 module.exports = {
   apps: [{
     name: 'ai-cli-bridge',
-    script: 'dist/server.js',
+    script: 'src/server.ts',
+    interpreter: 'bun',
     env_file: '.env',
     instances: 1,
     autorestart: true,
