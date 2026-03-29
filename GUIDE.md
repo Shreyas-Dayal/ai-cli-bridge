@@ -396,6 +396,10 @@ ssh ai-bridge
 # System packages
 apt-get update -qq && apt-get install -y -qq curl git
 
+# Node.js (needed for PM2 and CLI tools)
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y -qq nodejs
+
 # Bun
 curl -fsSL https://bun.sh/install | bash
 source ~/.bashrc

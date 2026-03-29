@@ -9,7 +9,7 @@ HTTP bridge server wrapping Claude Code CLI and Codex CLI behind an Express API.
 - **Runtime:** Bun, TypeScript, ES modules
 - **Framework:** Express 4
 - **Package manager:** bun
-- **Process manager:** PM2 (cluster mode)
+- **Process manager:** PM2 (fork mode)
 - **Tunnel:** Cloudflare Tunnel (cloudflared)
 - **No database** — JSON file persistence (`data/keys.json`, `data/usage.json`, `data/logs.json`)
 
