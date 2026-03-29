@@ -25,7 +25,7 @@ rsync -avz --exclude node_modules --exclude .env --exclude data --exclude .git \
   ./ <YOUR_SERVER>:/path/to/ai-cli-bridge/
 
 # 3. Restart the server
-ssh <YOUR_SERVER> "pm2 restart ai-cli-bridge"
+ssh <YOUR_SERVER> "systemctl restart ai-cli-bridge"
 ```
 
 ### Static-Only Changes (HTML/CSS/JS in public/)
@@ -44,7 +44,7 @@ If `package.json` or `bun.lock` changed, install on the server before restarting
 rsync -avz --exclude node_modules --exclude .env --exclude data --exclude .git \
   ./ <YOUR_SERVER>:/path/to/ai-cli-bridge/
 
-ssh <YOUR_SERVER> "cd /path/to/ai-cli-bridge && bun install --frozen-lockfile && pm2 restart ai-cli-bridge"
+ssh <YOUR_SERVER> "cd /path/to/ai-cli-bridge && bun install --frozen-lockfile && systemctl restart ai-cli-bridge"
 ```
 
 ## Verify
@@ -54,11 +54,11 @@ ssh <YOUR_SERVER> "cd /path/to/ai-cli-bridge && bun install --frozen-lockfile &&
 curl -s https://<YOUR_DOMAIN>/health
 # → {"status":"ok"}
 
-# Check PM2 status
-ssh <YOUR_SERVER> "pm2 status"
+# Check service status
+ssh <YOUR_SERVER> "systemctl status ai-cli-bridge"
 
 # View live logs
-ssh <YOUR_SERVER> "pm2 logs ai-cli-bridge --lines 20"
+ssh <YOUR_SERVER> "journalctl -u ai-cli-bridge -f --lines 20"
 ```
 
 ## Important Paths
@@ -71,7 +71,7 @@ ssh <YOUR_SERVER> "pm2 logs ai-cli-bridge --lines 20"
 | Usage file (server) | `<project>/data/usage.json` |
 | Logs file (server) | `<project>/data/logs.json` |
 | Env config (server) | `<project>/.env` |
-| PM2 config | `<project>/ecosystem.config.cjs` |
+| systemd service | `/etc/systemd/system/ai-cli-bridge.service` |
 | Dashboard URL | `https://<YOUR_DOMAIN>/admin/dashboard/admin.html` |
 
 ## Re-authenticate CLIs
@@ -89,11 +89,11 @@ codex auth    # Follow the OAuth URL for Codex
 
 ```bash
 # View server logs in real-time
-ssh <YOUR_SERVER> "pm2 logs ai-cli-bridge"
+ssh <YOUR_SERVER> "journalctl -u ai-cli-bridge -f"
 
 # Check tunnel status
 ssh <YOUR_SERVER> "systemctl status cloudflared"
 
-# Restart PM2 + tunnel
-ssh <YOUR_SERVER> "pm2 restart ai-cli-bridge && systemctl restart cloudflared"
+# Restart server + tunnel
+ssh <YOUR_SERVER> "systemctl restart ai-cli-bridge cloudflared"
 ```

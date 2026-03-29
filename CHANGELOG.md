@@ -19,7 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Rate limiting** — configurable global rate limiter via `express-rate-limit`
 - **Security headers** — X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy
 - **Docker support** — Dockerfile with non-root user and dumb-init, docker-compose with healthcheck
-- **PM2 config** — ecosystem.config.cjs for production process management
+- **systemd service** — ai-cli-bridge.service for production process management
 - **Cloudflare Tunnel template** — cloudflared config for zero-open-port deployment
 - **Server provisioning script** — setup.sh for one-shot VPS setup
 - **Health endpoint** — `GET /health` (unauthenticated)

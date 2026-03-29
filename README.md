@@ -23,7 +23,7 @@ AI API calls are expensive at scale. If you already pay for Claude Max (~$100-20
 - **Admin dashboard** — manage keys, monitor usage, view request logs
 - **Usage tracking** — in-memory with periodic disk flush, auto-pruning
 - **Security** — `execFile` (no shell injection), CSP, HSTS, rate limiting, input validation
-- **Deploy anywhere** — Docker support, PM2 config, Cloudflare Tunnel template
+- **Deploy anywhere** — Docker support, systemd service, Cloudflare Tunnel template
 
 ## Quick Start
 
@@ -184,7 +184,7 @@ data/                     Runtime data (gitignored)
 codex-pricing.json        Codex model pricing (editable, no rebuild)
 Dockerfile                Docker image definition
 docker-compose.yml        Docker orchestration
-ecosystem.config.cjs      PM2 process manager config
+ai-cli-bridge.service     systemd service file
 cloudflared-config.yml    Cloudflare Tunnel template
 .github/workflows/ci.yml  CI build check on push/PR
 ```

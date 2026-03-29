@@ -9,7 +9,7 @@ HTTP bridge server wrapping Claude Code CLI and Codex CLI behind an Express API.
 - **Runtime:** Bun, TypeScript, ES modules
 - **Framework:** Express 4
 - **Package manager:** bun
-- **Process manager:** PM2 (fork mode)
+- **Process manager:** systemd
 - **Tunnel:** Cloudflare Tunnel (cloudflared)
 - **No database** — JSON file persistence (`data/keys.json`, `data/usage.json`, `data/logs.json`)
 
@@ -47,7 +47,7 @@ bun start:prod        # Run compiled JS (bun dist/server.js)
 bun run build
 rsync -avz --exclude node_modules --exclude .env --exclude data --exclude .git \
   ./ <YOUR_SERVER>:/path/to/ai-cli-bridge/
-ssh <YOUR_SERVER> "pm2 restart ai-cli-bridge"
+ssh <YOUR_SERVER> "systemctl restart ai-cli-bridge"
 ```
 
 Static-only changes (public/) don't need a server restart.
@@ -87,7 +87,7 @@ See `DEPLOY.md` for full reference.
 | Project (server) | `/path/to/ai-cli-bridge/` |
 | Data dir | `<project>/data/` |
 | Env config | `<project>/.env` |
-| PM2 config | `<project>/ecosystem.config.cjs` |
+| systemd service | `/etc/systemd/system/ai-cli-bridge.service` |
 | Dashboard | `https://<YOUR_DOMAIN>/admin/dashboard/admin.html` |
 
 ## API Endpoints
