@@ -22,25 +22,23 @@
     "subscription"
   ],
   "engines": {
-    "node": ">=20.0.0"
+    "bun": ">=1.2.0"
   },
   "type": "module",
   "scripts": {
-    "start": "tsx src/server.ts",
-    "dev": "tsx watch src/server.ts",
+    "start": "bun src/server.ts",
+    "dev": "bun --watch src/server.ts",
     "build": "tsc",
-    "start:prod": "node dist/server.js"
+    "start:prod": "bun dist/server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "dotenv": "^17.3.1",
     "express": "^4.21.0",
     "express-rate-limit": "^7.5.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
-    "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   }
 }

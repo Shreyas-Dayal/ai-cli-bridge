@@ -7,22 +7,21 @@ Thanks for your interest in contributing to ai-cli-bridge!
 ```bash
 git clone https://github.com/Shreyas-Dayal/ai-cli-bridge.git
 cd ai-cli-bridge
-pnpm install
+bun install
 cp .env.example .env   # Set BRIDGE_ADMIN_KEY
-pnpm dev               # http://localhost:3456
+bun dev                # http://localhost:3456
 ```
 
 ### Prerequisites
 
-- Node.js 20+
-- pnpm
+- [Bun](https://bun.sh) 1.2+
 - Claude Code CLI and/or Codex CLI installed and authenticated (for testing generation endpoints)
 
 ## Development
 
-- `pnpm dev` — starts the server with file watching (tsx)
-- `pnpm run build` — compiles TypeScript (check for errors before submitting)
-- `pnpm start:prod` — runs compiled JS from `dist/`
+- `bun dev` — starts the server with file watching
+- `bun run build` — compiles TypeScript (check for errors before submitting)
+- `bun start:prod` — runs compiled JS from `dist/`
 
 ## Code Style
 
@@ -47,7 +46,7 @@ docs: update deployment guide
 
 1. Fork the repo and create a branch from `master`
 2. Make your changes
-3. Run `pnpm run build` to verify TypeScript compiles cleanly
+3. Run `bun run build` to verify TypeScript compiles cleanly
 4. Test manually (see below)
 5. Open a PR with a clear description of what and why
 
@@ -74,7 +73,7 @@ Use [GitHub Issues](https://github.com/Shreyas-Dayal/ai-cli-bridge/issues). Plea
 
 - What you expected vs what happened
 - Steps to reproduce
-- Node.js version and OS
+- Bun version and OS
 - Relevant logs (redact any keys or sensitive info)
 
 ## Security

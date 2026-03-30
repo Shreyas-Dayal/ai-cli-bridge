@@ -1,9 +1,9 @@
-FROM node:20-slim
+FROM oven/bun:latest
 
 RUN apt-get update && apt-get install -y dumb-init && rm -rf /var/lib/apt/lists/*
 
-# Install pnpm + CLIs
-RUN npm install -g pnpm @anthropic-ai/claude-code @openai/codex
+# Install CLIs
+RUN bun install -g @anthropic-ai/claude-code @openai/codex
 
 WORKDIR /app
 
@@ -13,18 +13,15 @@ RUN useradd -m -u 1000 bridge && \
     chown -R bridge:bridge /app /home/bridge
 
 # Install dependencies
-COPY --chown=bridge:bridge package.json pnpm-lock.yaml* ./
-RUN pnpm install --frozen-lockfile || pnpm install
+COPY --chown=bridge:bridge package.json bun.lock* ./
+RUN bun install --frozen-lockfile || bun install
 
 # Copy source
 COPY --chown=bridge:bridge . .
-
-# Build TypeScript
-RUN pnpm build
 
 USER bridge
 
 EXPOSE 3456
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
-CMD ["node", "dist/server.js"]
+CMD ["bun", "src/server.ts"]

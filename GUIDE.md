@@ -65,7 +65,7 @@ The tradeoff: more infrastructure complexity in exchange for dramatically lower 
 ┌─────────────────────────────────────────────────────────────────┐
 │  VPS (e.g. DigitalOcean Droplet, $4-6/mo)                       │
 │  ┌───────────────────────────────────────────────────────────┐  │
-│  │  ai-cli-bridge (Express server, managed by PM2)           │  │
+│  │  ai-cli-bridge (Express server, managed by systemd)       │  │
 │  │  - Per-user key auth (SHA-256 hashed, timing-safe)        │  │
 │  │  - Per-key usage limits (requests, tokens, cost)          │  │
 │  │  - Rate limiting, security headers, input validation      │  │
@@ -84,7 +84,7 @@ The tradeoff: more infrastructure complexity in exchange for dramatically lower 
 
 - **Any cheap VPS ($4-6/mo):** The CLIs call remote APIs, so CPU/RAM needs are minimal. DigitalOcean, Hetzner, Linode, etc. all work.
 - **Cloudflare Tunnel:** Eliminates the need to open any ports on the droplet. All traffic flows through Cloudflare's network. Free TLS, free DDoS protection, and a clean domain name.
-- **PM2:** Process manager that auto-restarts the server on crash and survives reboots via systemd integration.
+- **systemd:** Native Linux service manager — auto-restarts the server on crash, starts on boot, and provides logging via `journalctl`.
 - **Express:** Minimal HTTP framework. The server is ~260 lines — just middleware, validation, and CLI invocation.
 
 ### Why Not Docker in Production
@@ -132,7 +132,7 @@ ai-cli-bridge/
 │   └── usage.json             # Per-key daily/monthly usage counters
 ├── Dockerfile                 # Container build (non-root user, dumb-init)
 ├── docker-compose.yml         # With health check + auth volume persistence
-├── ecosystem.config.cjs       # PM2 process manager configuration
+├── ai-cli-bridge.service      # systemd service file
 ├── cloudflared-config.yml     # Cloudflare Tunnel config template
 ├── setup.sh                   # One-shot droplet provisioning script
 ├── .env.example               # All configurable environment variables
@@ -276,7 +276,7 @@ The Dockerfile runs as a non-root `bridge` user with `dumb-init` for proper sign
 
 - **HTTPS on the server itself:** Not needed — Cloudflare Tunnel handles TLS termination. The server listens on HTTP internally, which is standard for reverse-proxy architectures.
 - **Model whitelisting:** Left flexible so new models work without code changes. The CLIs themselves enforce model access based on your subscription.
-- **Request logging to a database:** Overkill for a personal bridge. Console logs captured by PM2 are sufficient. Per-key usage is tracked in `usage.json`.
+- **Request logging to a database:** Overkill for a personal bridge. Console logs captured by journalctl are sufficient. Per-key usage is tracked in `usage.json`.
 
 ---
 
@@ -394,14 +394,14 @@ SSH in and run:
 ssh ai-bridge
 
 # System packages
-apt-get update -qq && apt-get install -y -qq curl git
+apt-get update -qq && apt-get install -y -qq curl git unzip
 
-# Node.js 20
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y -qq nodejs
+# Bun
+curl -fsSL https://bun.sh/install | bash
+source ~/.bashrc
 
-# pnpm, PM2, AI CLIs
-npm install -g pnpm pm2 @anthropic-ai/claude-code @openai/codex
+# AI CLIs
+bun install -g @anthropic-ai/claude-code @openai/codex
 
 # Cloudflared
 curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
@@ -421,8 +421,8 @@ On the droplet:
 
 ```bash
 cd /opt/ai-cli-bridge
-pnpm install
-pnpm build
+bun install
+bun run build
 ```
 
 ### 5. Configure Environment
@@ -466,10 +466,10 @@ Each CLI will print a URL. Open it in your browser, authenticate, and the tokens
 ### 7. Start the Server
 
 ```bash
-cd /opt/ai-cli-bridge
-pm2 start ecosystem.config.cjs
-pm2 save
-pm2 startup  # Auto-start on reboot
+# Copy the service file and enable it
+cp /opt/ai-cli-bridge/ai-cli-bridge.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now ai-cli-bridge
 ```
 
 Verify: `curl -s http://localhost:3456/health` → `{"status":"ok"}`
@@ -743,14 +743,14 @@ From your local machine:
 
 ```bash
 # After making changes locally
-pnpm build  # Verify it compiles
+bun run build  # Verify it compiles
 
 # Deploy
 rsync -avz --exclude node_modules --exclude .env --exclude data \
   ./ai-cli-bridge/ ai-bridge:/opt/ai-cli-bridge/
 
 # Restart on the droplet
-ssh ai-bridge 'cd /opt/ai-cli-bridge && pnpm install --frozen-lockfile && pm2 restart ai-cli-bridge'
+ssh ai-bridge 'cd /opt/ai-cli-bridge && bun install --frozen-lockfile && systemctl restart ai-cli-bridge'
 ```
 
 ### Re-authenticating CLIs
@@ -768,10 +768,10 @@ codex auth    # Re-authenticate Codex
 
 ```bash
 # View real-time logs
-ssh ai-bridge 'pm2 logs ai-cli-bridge'
+ssh ai-bridge 'journalctl -u ai-cli-bridge -f'
 
 # Check server status
-ssh ai-bridge 'pm2 status'
+ssh ai-bridge 'systemctl status ai-cli-bridge'
 
 # Check tunnel status
 ssh ai-bridge 'systemctl status cloudflared'

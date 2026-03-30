@@ -23,14 +23,13 @@ AI API calls are expensive at scale. If you already pay for Claude Max (~$100-20
 - **Admin dashboard** — manage keys, monitor usage, view request logs
 - **Usage tracking** — in-memory with periodic disk flush, auto-pruning
 - **Security** — `execFile` (no shell injection), CSP, HSTS, rate limiting, input validation
-- **Deploy anywhere** — Docker support, PM2 config, Cloudflare Tunnel template
+- **Deploy anywhere** — Docker support, systemd service, Cloudflare Tunnel template
 
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js 20+
-- pnpm
+- [Bun](https://bun.sh) 1.2+
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) and/or [Codex CLI](https://github.com/openai/codex) installed and authenticated
 
 ### Local Development
@@ -38,9 +37,9 @@ AI API calls are expensive at scale. If you already pay for Claude Max (~$100-20
 ```bash
 git clone https://github.com/Shreyas-Dayal/ai-cli-bridge.git
 cd ai-cli-bridge
-pnpm install
+bun install
 cp .env.example .env    # Edit to set BRIDGE_ADMIN_KEY
-pnpm dev                # Starts on http://localhost:3456
+bun dev                 # Starts on http://localhost:3456
 ```
 
 ### Docker
@@ -185,7 +184,7 @@ data/                     Runtime data (gitignored)
 codex-pricing.json        Codex model pricing (editable, no rebuild)
 Dockerfile                Docker image definition
 docker-compose.yml        Docker orchestration
-ecosystem.config.cjs      PM2 process manager config
+ai-cli-bridge.service     systemd service file
 cloudflared-config.yml    Cloudflare Tunnel template
 .github/workflows/ci.yml  CI build check on push/PR
 ```
