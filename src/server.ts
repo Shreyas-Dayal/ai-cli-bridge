@@ -5,8 +5,9 @@ import { join } from 'path';
 import { config } from './config.js';
 import { KeyManager } from './keys.js';
 import { keyAuthMiddleware, adminAuthMiddleware } from './middleware/auth.js';
-import { generateWithClaude } from './providers/claude.js';
-import { generateWithCodex } from './providers/codex.js';
+import { generateWithClaude, streamWithClaude } from './providers/claude.js';
+import { generateWithCodex, streamWithCodex } from './providers/codex.js';
+import { initSSE, sendSSEEvent, sendSSEError, sendSSEDone } from './utils/sse.js';
 
 const app = express();
 app.set('trust proxy', 1); // Trust first proxy (Cloudflare Tunnel)
@@ -327,6 +328,128 @@ app.post('/generate-codex', async (req, res) => {
   }
 });
 
+// ── Streaming routes ─────────────────────────────────────────────────────────
+
+// Claude Code CLI (streaming)
+app.post('/generate/stream', (req, res) => {
+  const validation = validateGenerateBody(req.body);
+  if (validation.error) {
+    res.status(400).json({ error: validation.error });
+    return;
+  }
+
+  const { systemPrompt, userPrompt, model } = req.body;
+
+  initSSE(res);
+
+  let accumulatedText = '';
+
+  const handle = streamWithClaude(
+    { systemPrompt, userPrompt, model },
+    {
+      defaultModel: config.claudeDefaultModel,
+      timeoutMs: config.claudeTimeoutMs,
+      maxBuffer: config.claudeMaxBuffer,
+    },
+    {
+      onText: (chunk) => {
+        accumulatedText += chunk;
+        sendSSEEvent(res, 'text', { text: chunk });
+      },
+      onUsage: (usage, costUsd, durationMs) => {
+        if (req.keyHash) {
+          keyManager.recordUsage(req.keyHash, usage.input_tokens, usage.output_tokens, costUsd);
+        }
+        const usedModel = model || config.claudeDefaultModel;
+        keyManager.logRequest({
+          keyName: req.keyName || 'anonymous',
+          provider: 'claude',
+          model: usedModel,
+          systemPrompt,
+          userPrompt,
+          inputTokens: usage.input_tokens,
+          outputTokens: usage.output_tokens,
+          costUsd,
+          durationMs,
+        });
+        logRequest('Claude', usedModel, req.keyName, usage, costUsd, durationMs);
+        sendSSEEvent(res, 'usage', { usage, cost_usd: costUsd, duration_ms: durationMs });
+      },
+      onError: (err) => {
+        console.error('[generate/stream] Claude streaming error:', err.message);
+        sendSSEError(res, 'Generation failed');
+      },
+      onDone: () => {
+        sendSSEDone(res);
+      },
+    }
+  );
+
+  req.on('close', () => {
+    handle.kill();
+  });
+});
+
+// Codex CLI (streaming)
+app.post('/generate-codex/stream', (req, res) => {
+  const validation = validateGenerateBody(req.body);
+  if (validation.error) {
+    res.status(400).json({ error: validation.error });
+    return;
+  }
+
+  const { systemPrompt, userPrompt, model } = req.body;
+
+  initSSE(res);
+
+  let accumulatedText = '';
+
+  const handle = streamWithCodex(
+    { systemPrompt, userPrompt, model },
+    {
+      defaultModel: config.codexDefaultModel,
+      timeoutMs: config.codexTimeoutMs,
+      maxBuffer: config.codexMaxBuffer,
+    },
+    {
+      onText: (chunk) => {
+        accumulatedText += chunk;
+        sendSSEEvent(res, 'text', { text: chunk });
+      },
+      onUsage: (usage, costUsd) => {
+        if (req.keyHash) {
+          keyManager.recordUsage(req.keyHash, usage.input_tokens, usage.output_tokens, costUsd);
+        }
+        const usedModel = model || config.codexDefaultModel;
+        keyManager.logRequest({
+          keyName: req.keyName || 'anonymous',
+          provider: 'codex',
+          model: usedModel,
+          systemPrompt,
+          userPrompt,
+          inputTokens: usage.input_tokens,
+          outputTokens: usage.output_tokens,
+          costUsd,
+          durationMs: 0,
+        });
+        logRequest('Codex', usedModel, req.keyName, usage, costUsd);
+        sendSSEEvent(res, 'usage', { usage, cost_usd: costUsd });
+      },
+      onError: (err) => {
+        console.error('[generate-codex/stream] Codex streaming error:', err.message);
+        sendSSEError(res, 'Generation failed');
+      },
+      onDone: () => {
+        sendSSEDone(res);
+      },
+    }
+  );
+
+  req.on('close', () => {
+    handle.kill();
+  });
+});
+
 // ── Start ────────────────────────────────────────────────────────────────────
 
 app.listen(config.port, () => {
@@ -336,9 +459,11 @@ app.listen(config.port, () => {
   console.log(`  Rate limit: ${config.rateLimitMaxRequests} req / ${config.rateLimitWindowMs / 1000}s`);
   console.log(`  Data dir: ${config.dataDir}`);
   console.log('  Endpoints:');
-  console.log('    POST /generate          — Claude Code CLI');
-  console.log('    POST /generate-codex    — Codex CLI');
-  console.log('    GET  /health            — Health check');
+  console.log('    POST /generate               — Claude Code CLI');
+  console.log('    POST /generate/stream         — Claude Code CLI (SSE)');
+  console.log('    POST /generate-codex          — Codex CLI');
+  console.log('    POST /generate-codex/stream   — Codex CLI (SSE)');
+  console.log('    GET  /health                  — Health check');
   console.log('  Admin:');
   console.log('    GET    /admin/keys          — List keys + usage');
   console.log('    POST   /admin/keys          — Create key');
