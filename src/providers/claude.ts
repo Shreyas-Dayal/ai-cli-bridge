@@ -1,4 +1,4 @@
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { writeFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -139,4 +139,137 @@ export function generateWithClaude(
       reject(new Error('Failed to write prompt to CLI stdin'));
     }
   });
+}
+
+// ── Streaming variant ───────────────────────────────────────────────────────
+
+export interface StreamCallbacks {
+  onText: (chunk: string) => void;
+  onUsage: (usage: ClaudeResponse['usage'], costUsd: number, durationMs: number) => void;
+  onError: (error: Error) => void;
+  onDone: () => void;
+}
+
+export function streamWithClaude(
+  req: ClaudeRequest,
+  cfg: ClaudeConfig,
+  callbacks: StreamCallbacks
+): { kill: () => void } {
+  const model = req.model || cfg.defaultModel;
+
+  const tmpFile = join(tmpdir(), `cli-bridge-${randomUUID()}.txt`);
+  writeFileSync(tmpFile, req.systemPrompt, { encoding: 'utf-8', mode: 0o600 });
+
+  const args = [
+    '-p',
+    '--system-prompt-file', tmpFile,
+    '--model', model,
+    '--max-turns', '5',
+    '--tools', '',
+    '--output-format', 'stream-json',
+    '--verbose',
+    '--include-partial-messages',
+  ];
+
+  let finished = false;
+  const finish = (fn: () => void) => {
+    if (finished) return;
+    finished = true;
+    fn();
+  };
+
+  const child = spawn('claude', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+
+  // Timeout handling
+  const timer = setTimeout(() => {
+    try { child.kill('SIGTERM'); } catch { /* ignore */ }
+    setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch { /* ignore */ }
+    }, 5000);
+    finish(() => callbacks.onError(new Error('Generation timed out')));
+  }, cfg.timeoutMs);
+
+  // Stderr collection for diagnostics
+  let stderrOutput = '';
+  child.stderr.on('data', (data: Buffer) => {
+    stderrOutput += data.toString();
+  });
+
+  // Line-based JSONL parser
+  let buffer = '';
+  child.stdout.on('data', (data: Buffer) => {
+    buffer += data.toString();
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const parsed = JSON.parse(line);
+
+        // Text delta chunks
+        if (parsed.type === 'stream_event' && parsed.event?.type === 'content_block_delta') {
+          const delta = parsed.event.delta;
+          if (delta?.type === 'text_delta' && delta.text) {
+            callbacks.onText(delta.text);
+          }
+          // Skip thinking_delta
+        }
+
+        // Final result with usage and cost
+        if (parsed.type === 'result' && parsed.subtype === 'success') {
+          const usage = parsed.usage || {};
+          callbacks.onUsage(
+            {
+              input_tokens: usage.input_tokens || 0,
+              output_tokens: usage.output_tokens || 0,
+              cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
+              cache_read_input_tokens: usage.cache_read_input_tokens || 0,
+            },
+            parsed.total_cost_usd || 0,
+            parsed.duration_ms || 0
+          );
+        }
+      } catch {
+        // Skip unparseable lines
+      }
+    }
+  });
+
+  child.on('close', (code) => {
+    clearTimeout(timer);
+    try { unlinkSync(tmpFile); } catch { /* ignore */ }
+
+    if (code !== 0 && !finished) {
+      console.error(`[claude/stream] CLI exited with code ${code}`, stderrOutput.slice(0, 500));
+      finish(() => callbacks.onError(new Error('Claude generation failed')));
+    } else {
+      finish(() => callbacks.onDone());
+    }
+  });
+
+  child.on('error', (err) => {
+    clearTimeout(timer);
+    try { unlinkSync(tmpFile); } catch { /* ignore */ }
+    console.error('[claude/stream] spawn error:', err.message);
+    finish(() => callbacks.onError(new Error('Claude generation failed')));
+  });
+
+  // Write prompt to stdin
+  try {
+    if (child.stdin) {
+      child.stdin.write(req.userPrompt);
+      child.stdin.end();
+    }
+  } catch {
+    try { child.kill(); } catch { /* ignore */ }
+    try { unlinkSync(tmpFile); } catch { /* ignore */ }
+    finish(() => callbacks.onError(new Error('Failed to write prompt to CLI stdin')));
+  }
+
+  return {
+    kill: () => {
+      try { child.kill(); } catch { /* ignore */ }
+    },
+  };
 }
