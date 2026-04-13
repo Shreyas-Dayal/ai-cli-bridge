@@ -93,6 +93,28 @@ Both endpoints return a consistent response shape:
 
 Claude responses also include `duration_ms`, `cache_creation_input_tokens`, and `cache_read_input_tokens`. Codex cost is estimated from a built-in pricing table.
 
+### Streaming
+
+Add `"stream": true` to the request body to receive Server-Sent Events instead of a JSON response:
+
+```bash
+curl -N -X POST http://localhost:3456/generate \
+  -H "Authorization: Bearer <USER_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"systemPrompt":"Reply concisely.","userPrompt":"Write a haiku about coding.","stream":true}'
+```
+
+SSE events:
+
+| Event | Data | Description |
+|---|---|---|
+| `text` | `{"text":"chunk"}` | Incremental text as it arrives |
+| `usage` | `{"usage":{...},"cost_usd":0.003}` | Token counts and cost (sent once, at end) |
+| `done` | `{}` | Stream complete |
+| `error` | `{"error":"message"}` | Error occurred |
+
+Streaming works on both `/generate` and `/generate-codex`. Omitting `stream` or setting it to `false` returns the standard JSON response.
+
 ## API Endpoints
 
 ### User (Bearer user-key)
@@ -100,8 +122,8 @@ Claude responses also include `duration_ms`, `cache_creation_input_tokens`, and 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/health` | Health check (no auth) |
-| `POST` | `/generate` | Claude Code CLI |
-| `POST` | `/generate-codex` | Codex CLI |
+| `POST` | `/generate` | Claude Code CLI (`stream: true` for SSE) |
+| `POST` | `/generate-codex` | Codex CLI (`stream: true` for SSE) |
 
 ### Admin (Bearer admin-key)
 

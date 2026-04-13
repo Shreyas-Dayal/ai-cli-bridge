@@ -21,9 +21,10 @@ src/
   config.ts           — Env var parsing + defaults
   keys.ts             — KeyManager: hashed key CRUD, usage tracking, limits, request logs
   middleware/auth.ts   — Per-user key auth + admin auth (timing-safe)
+  utils/sse.ts        — SSE helpers (initSSE, sendSSEEvent, sendSSEError, sendSSEDone)
   providers/
-    claude.ts         — Claude Code CLI wrapper (execFile, temp files, JSON parse)
-    codex.ts          — Codex CLI wrapper (execFile, JSONL parse, cost estimation)
+    claude.ts         — Claude Code CLI wrapper (execFile + spawn for streaming)
+    codex.ts          — Codex CLI wrapper (execFile + spawn for streaming)
 public/
   admin.html          — Dashboard markup
   admin.css           — Dashboard styles
@@ -56,8 +57,8 @@ See `DEPLOY.md` for full reference.
 
 ## Architecture
 
-- **Two-thread CLI wrapping:** `execFile()` spawns CLI, pipes prompt via stdin, parses JSON/JSONL output. `execFile` (not `exec`) prevents shell injection.
-- **Endpoint-based routing:** `/generate` → Claude CLI, `/generate-codex` → Codex CLI.
+- **CLI wrapping:** `execFile()` spawns CLI for non-streaming, `spawn()` for streaming. Both use array args (no shell injection).
+- **Endpoint-based routing:** `/generate` → Claude CLI, `/generate-codex` → Codex CLI. Both support `stream: true` for SSE responses.
 - **Auth:** SHA-256 hashed keys with `crypto.timingSafeEqual`. Raw keys never stored — shown once at creation. `req.keyHash` on request object, never `req.rawKey`.
 - **Limits:** Per-key: requests/day, requests/month, tokens/month, cost/day, cost/month. All default 0 (unlimited).
 - **Usage tracking:** In-memory with 30s dirty-flag flush to disk. Daily entries pruned >90 days, monthly >12 months.
@@ -93,8 +94,8 @@ See `DEPLOY.md` for full reference.
 ## API Endpoints
 
 **User** (Bearer user-key):
-- `POST /generate` — Claude Code CLI
-- `POST /generate-codex` — Codex CLI
+- `POST /generate` — Claude Code CLI (`stream: true` for SSE)
+- `POST /generate-codex` — Codex CLI (`stream: true` for SSE)
 - `GET /health` — No auth
 
 **Admin** (Bearer admin-key):
