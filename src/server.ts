@@ -241,7 +241,7 @@ function logRequest(provider: string, model: string, keyName: string | undefined
 // ── Generation routes ────────────────────────────────────────────────────────
 
 // Claude Code CLI (supports stream: true)
-app.post('/generate', (req, res) => {
+app.post('/generate', async (req, res) => {
   const validation = validateGenerateBody(req.body);
   if (validation.error) {
     res.status(400).json({ error: validation.error });
@@ -299,45 +299,43 @@ app.post('/generate', (req, res) => {
   }
 
   // ── Non-streaming response (JSON) ──
-  (async () => {
-    try {
-      const result = await generateWithClaude(
-        { systemPrompt, userPrompt, model },
-        {
-          defaultModel: config.claudeDefaultModel,
-          timeoutMs: config.claudeTimeoutMs,
-          maxBuffer: config.claudeMaxBuffer,
-        }
-      );
-
-      if (req.keyHash) {
-        keyManager.recordUsage(req.keyHash, result.usage.input_tokens, result.usage.output_tokens, result.cost_usd);
+  try {
+    const result = await generateWithClaude(
+      { systemPrompt, userPrompt, model },
+      {
+        defaultModel: config.claudeDefaultModel,
+        timeoutMs: config.claudeTimeoutMs,
+        maxBuffer: config.claudeMaxBuffer,
       }
+    );
 
-      const usedModel = model || config.claudeDefaultModel;
-      keyManager.logRequest({
-        keyName: req.keyName || 'anonymous',
-        provider: 'claude',
-        model: usedModel,
-        systemPrompt,
-        userPrompt,
-        inputTokens: result.usage.input_tokens,
-        outputTokens: result.usage.output_tokens,
-        costUsd: result.cost_usd,
-        durationMs: result.duration_ms || 0,
-      });
-
-      logRequest('Claude', usedModel, req.keyName, result.usage, result.cost_usd, result.duration_ms);
-      res.json(result);
-    } catch (err) {
-      console.error('[generate] Claude generation error:', err instanceof Error ? err.message : err);
-      res.status(500).json({ error: 'Generation failed' });
+    if (req.keyHash) {
+      keyManager.recordUsage(req.keyHash, result.usage.input_tokens, result.usage.output_tokens, result.cost_usd);
     }
-  })();
+
+    const usedModel = model || config.claudeDefaultModel;
+    keyManager.logRequest({
+      keyName: req.keyName || 'anonymous',
+      provider: 'claude',
+      model: usedModel,
+      systemPrompt,
+      userPrompt,
+      inputTokens: result.usage.input_tokens,
+      outputTokens: result.usage.output_tokens,
+      costUsd: result.cost_usd,
+      durationMs: result.duration_ms || 0,
+    });
+
+    logRequest('Claude', usedModel, req.keyName, result.usage, result.cost_usd, result.duration_ms);
+    res.json(result);
+  } catch (err) {
+    console.error('[generate] Claude generation error:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Generation failed' });
+  }
 });
 
 // Codex CLI (supports stream: true)
-app.post('/generate-codex', (req, res) => {
+app.post('/generate-codex', async (req, res) => {
   const validation = validateGenerateBody(req.body);
   if (validation.error) {
     res.status(400).json({ error: validation.error });
@@ -395,41 +393,39 @@ app.post('/generate-codex', (req, res) => {
   }
 
   // ── Non-streaming response (JSON) ──
-  (async () => {
-    try {
-      const result = await generateWithCodex(
-        { systemPrompt, userPrompt, model },
-        {
-          defaultModel: config.codexDefaultModel,
-          timeoutMs: config.codexTimeoutMs,
-          maxBuffer: config.codexMaxBuffer,
-        }
-      );
-
-      if (req.keyHash) {
-        keyManager.recordUsage(req.keyHash, result.usage.input_tokens, result.usage.output_tokens, result.cost_usd);
+  try {
+    const result = await generateWithCodex(
+      { systemPrompt, userPrompt, model },
+      {
+        defaultModel: config.codexDefaultModel,
+        timeoutMs: config.codexTimeoutMs,
+        maxBuffer: config.codexMaxBuffer,
       }
+    );
 
-      const usedModel = model || config.codexDefaultModel;
-      keyManager.logRequest({
-        keyName: req.keyName || 'anonymous',
-        provider: 'codex',
-        model: usedModel,
-        systemPrompt,
-        userPrompt,
-        inputTokens: result.usage.input_tokens,
-        outputTokens: result.usage.output_tokens,
-        costUsd: result.cost_usd,
-        durationMs: 0,
-      });
-
-      logRequest('Codex', usedModel, req.keyName, result.usage, result.cost_usd);
-      res.json(result);
-    } catch (err) {
-      console.error('[generate-codex] Codex generation error:', err instanceof Error ? err.message : err);
-      res.status(500).json({ error: 'Generation failed' });
+    if (req.keyHash) {
+      keyManager.recordUsage(req.keyHash, result.usage.input_tokens, result.usage.output_tokens, result.cost_usd);
     }
-  })();
+
+    const usedModel = model || config.codexDefaultModel;
+    keyManager.logRequest({
+      keyName: req.keyName || 'anonymous',
+      provider: 'codex',
+      model: usedModel,
+      systemPrompt,
+      userPrompt,
+      inputTokens: result.usage.input_tokens,
+      outputTokens: result.usage.output_tokens,
+      costUsd: result.cost_usd,
+      durationMs: 0,
+    });
+
+    logRequest('Codex', usedModel, req.keyName, result.usage, result.cost_usd);
+    res.json(result);
+  } catch (err) {
+    console.error('[generate-codex] Codex generation error:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Generation failed' });
+  }
 });
 
 // ── Start ────────────────────────────────────────────────────────────────────
