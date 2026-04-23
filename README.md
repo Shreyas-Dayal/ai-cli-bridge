@@ -1,8 +1,8 @@
 # ai-cli-bridge
 
-Turn your **Claude Max** / **OpenAI Pro** subscriptions into a private HTTP API that any project can consume.
+Turn your **Claude Max** / **OpenAI Pro** / **Gemini CLI** access into a private HTTP API that any project can consume.
 
-This server wraps the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) and [Codex CLI](https://github.com/openai/codex) behind an Express API. Instead of paying per-token, requests are backed by your existing subscription.
+This server wraps the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), and [Gemini CLI](https://github.com/google-gemini/gemini-cli) behind an Express API. Instead of paying per-token, requests are backed by your existing subscription or CLI login.
 
 ![Admin Dashboard](screenshot.png)
 
@@ -17,7 +17,7 @@ AI API calls are expensive at scale. If you already pay for Claude Max (~$100-20
 
 ## Features
 
-- **Two providers** — Claude Code CLI (`/generate`) and Codex CLI (`/generate-codex`)
+- **Three providers** — Claude Code CLI (`/generate`), Codex CLI (`/generate-codex`), and Gemini CLI (`/generate-gemini`)
 - **Per-user API keys** — SHA-256 hashed, shown once at creation, timing-safe auth
 - **Per-key usage limits** — requests/day, requests/month, tokens/month, cost/day, cost/month
 - **Admin dashboard** — manage keys, monitor usage, view request logs
@@ -30,7 +30,7 @@ AI API calls are expensive at scale. If you already pay for Claude Max (~$100-20
 ### Prerequisites
 
 - [Bun](https://bun.sh) 1.2+
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) and/or [Codex CLI](https://github.com/openai/codex) installed and authenticated
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), and/or [Gemini CLI](https://github.com/google-gemini/gemini-cli) installed and authenticated
 
 ### Local Development
 
@@ -76,6 +76,15 @@ curl -X POST http://localhost:3456/generate-codex \
   -d '{"systemPrompt":"Reply concisely.","userPrompt":"What is 2+2?"}'
 ```
 
+### Generate (Gemini)
+
+```bash
+curl -X POST http://localhost:3456/generate-gemini \
+  -H "Authorization: Bearer <USER_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"systemPrompt":"Reply concisely.","userPrompt":"What is 2+2?"}'
+```
+
 ### Response Shape
 
 Both endpoints return a consistent response shape:
@@ -91,7 +100,7 @@ Both endpoints return a consistent response shape:
 }
 ```
 
-Claude responses also include `duration_ms`, `cache_creation_input_tokens`, and `cache_read_input_tokens`. Codex cost is estimated from a built-in pricing table.
+Claude responses also include `duration_ms`, `cache_creation_input_tokens`, and `cache_read_input_tokens`. Gemini responses include `duration_ms` and `cached_input_tokens`. Codex cost is estimated from a built-in pricing table. Gemini cost estimation is optional via `gemini-pricing.json`.
 
 ### Streaming
 
@@ -113,7 +122,7 @@ SSE events:
 | `done` | `{}` | Stream complete |
 | `error` | `{"error":"message"}` | Error occurred |
 
-Streaming works on both `/generate` and `/generate-codex`. Omitting `stream` or setting it to `false` returns the standard JSON response.
+Streaming works on `/generate`, `/generate-codex`, and `/generate-gemini`. Omitting `stream` or setting it to `false` returns the standard JSON response.
 
 ## API Endpoints
 
@@ -124,6 +133,7 @@ Streaming works on both `/generate` and `/generate-codex`. Omitting `stream` or 
 | `GET` | `/health` | Health check (no auth) |
 | `POST` | `/generate` | Claude Code CLI (`stream: true` for SSE) |
 | `POST` | `/generate-codex` | Codex CLI (`stream: true` for SSE) |
+| `POST` | `/generate-gemini` | Gemini CLI (`stream: true` for SSE) |
 
 ### Admin (Bearer admin-key)
 
@@ -176,8 +186,11 @@ All settings are via environment variables. See [`.env.example`](.env.example) f
 | `CODEX_DEFAULT_MODEL` | `gpt-5.3-codex` | Default Codex model |
 | `CODEX_TIMEOUT_MS` | `180000` | Codex CLI timeout in ms (min 1000) |
 | `CODEX_MAX_BUFFER_BYTES` | `10485760` | Codex CLI max stdout buffer (min 1024) |
+| `GEMINI_DEFAULT_MODEL` | `auto-gemini-3` | Default Gemini model |
+| `GEMINI_TIMEOUT_MS` | `180000` | Gemini CLI timeout in ms (min 1000) |
+| `GEMINI_MAX_BUFFER_BYTES` | `10485760` | Gemini CLI max stdout buffer (min 1024) |
 
-Codex cost estimation uses pricing from [`codex-pricing.json`](codex-pricing.json). Edit that file when prices change — no rebuild needed, just restart. Claude CLI returns cost directly.
+Codex cost estimation uses pricing from [`codex-pricing.json`](codex-pricing.json). Edit that file when prices change — no rebuild needed, just restart. Claude CLI returns cost directly. Gemini cost estimation is optional via [`gemini-pricing.json`](gemini-pricing.json).
 
 ## Security
 
@@ -201,9 +214,11 @@ src/
   providers/
     claude.ts             Claude Code CLI wrapper
     codex.ts              Codex CLI wrapper
+    gemini.ts             Gemini CLI wrapper
 public/                   Admin dashboard (HTML/CSS/JS)
 data/                     Runtime data (gitignored)
 codex-pricing.json        Codex model pricing (editable, no rebuild)
+gemini-pricing.json       Gemini model pricing (optional, editable, no rebuild)
 Dockerfile                Docker image definition
 docker-compose.yml        Docker orchestration
 ai-cli-bridge.service     systemd service file

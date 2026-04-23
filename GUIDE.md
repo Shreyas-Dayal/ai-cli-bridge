@@ -20,7 +20,7 @@ Turn your Claude Max / OpenAI Pro subscriptions into a private API endpoint that
 
 ## Problem Statement
 
-AI API calls are expensive at scale. If you already pay for **Claude Max** (~$100-200/mo) or **OpenAI Pro** (~$200/mo), you're paying for generous usage that's locked to the CLI tools (Claude Code CLI, Codex CLI). These CLIs can only run locally from a terminal — they can't be called from web apps, Figma plugins, mobile apps, or any HTTP-based client.
+AI API calls are expensive at scale. If you already pay for **Claude Max** (~$100-200/mo), **OpenAI Pro** (~$200/mo), or use **Gemini CLI**, you're paying for usage that's locked to the CLI tools (Claude Code CLI, Codex CLI, Gemini CLI). These CLIs can only run locally from a terminal — they can't be called from web apps, Figma plugins, mobile apps, or any HTTP-based client.
 
 **This project bridges that gap:** it wraps the CLIs behind an HTTP API, deploys to a cheap server, and exposes a URL that any project can use as if it were a regular AI API — backed by your subscription instead of per-token billing.
 
@@ -401,7 +401,7 @@ curl -fsSL https://bun.sh/install | bash
 source ~/.bashrc
 
 # AI CLIs
-bun install -g @anthropic-ai/claude-code @openai/codex
+bun install -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli
 
 # Cloudflared
 curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
@@ -442,6 +442,7 @@ RATE_LIMIT_MAX_REQUESTS=30
 CORS_ORIGINS=
 CLAUDE_DEFAULT_MODEL=claude-sonnet-4-20250514
 CODEX_DEFAULT_MODEL=gpt-5.3-codex
+GEMINI_DEFAULT_MODEL=auto-gemini-3
 EOF
 
 chmod 600 /opt/ai-cli-bridge/.env
@@ -459,9 +460,12 @@ claude
 
 # Codex — follow the OAuth URL it prints
 codex auth
+
+# Gemini — follow the login flow it prints
+gemini
 ```
 
-Each CLI will print a URL. Open it in your browser, authenticate, and the tokens are saved to `~/.claude/` and `~/.config/` respectively.
+Each CLI will print a URL or login flow. Open it in your browser, authenticate, and the tokens are saved to the CLI-specific config directories.
 
 ### 7. Start the Server
 
@@ -638,6 +642,14 @@ Calls Codex CLI.
 **Request:** Same as `/generate`. Default model: `gpt-5.3-codex`.
 
 **Response:** Same shape. `cost_usd` is estimated from a hardcoded pricing table.
+
+#### `POST /generate-gemini`
+
+Calls Gemini CLI.
+
+**Request:** Same as `/generate`. Default model: `auto-gemini-3`.
+
+**Response:** Same shape. `duration_ms` is included. `cost_usd` is estimated only if `gemini-pricing.json` is populated.
 
 ### Admin Endpoints
 

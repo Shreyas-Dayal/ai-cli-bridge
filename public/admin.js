@@ -2,6 +2,7 @@
   'use strict';
 
   // ── State ──
+  const STORAGE_KEY = 'bridge.adminKey';
   let adminKey = '';
   let keys = [];
   let logs = [];
@@ -139,10 +140,12 @@
 
     try {
       await api('GET', '/keys');
+      sessionStorage.setItem(STORAGE_KEY, adminKey);
       showDashboard();
     } catch (err) {
       loginError.textContent = 'Authentication failed \u2014 invalid key';
       adminKey = '';
+      sessionStorage.removeItem(STORAGE_KEY);
       loginBtn.textContent = 'Authenticate';
       loginBtn.disabled = false;
     }
@@ -152,6 +155,7 @@
     adminKey = '';
     keys = [];
     activeModalKeyName = null;
+    sessionStorage.removeItem(STORAGE_KEY);
     clearInterval(refreshInterval);
     clearInterval(countdownInterval);
     dashboardView.style.display = 'none';
@@ -159,6 +163,21 @@
     adminKeyInput.value = '';
     loginBtn.textContent = 'Authenticate';
     loginBtn.disabled = false;
+  }
+
+  async function restoreSession() {
+    const saved = sessionStorage.getItem(STORAGE_KEY);
+    if (!saved) return false;
+    adminKey = saved;
+    try {
+      await api('GET', '/keys');
+      showDashboard();
+      return true;
+    } catch (err) {
+      adminKey = '';
+      sessionStorage.removeItem(STORAGE_KEY);
+      return false;
+    }
   }
 
   // ── Dashboard ──
@@ -592,4 +611,7 @@
 
   // Populate base URL
   baseUrlTag.textContent = window.location.origin;
+
+  // Auto-restore session from sessionStorage
+  restoreSession();
 })();

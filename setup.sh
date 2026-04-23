@@ -21,8 +21,8 @@ fi
 echo "  Bun: $(bun --version)"
 
 # ── 3. AI CLIs ───────────────────────────────────────────────────────────────
-echo "[3/4] Installing Claude Code CLI and Codex CLI..."
-bun install -g @anthropic-ai/claude-code @openai/codex
+echo "[3/4] Installing Claude Code CLI, Codex CLI, and Gemini CLI..."
+bun install -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli
 
 # ── 4. Cloudflare Tunnel (cloudflared) ────────────────────────────────────────
 echo "[4/4] Installing cloudflared..."
@@ -43,6 +43,7 @@ echo ""
 echo "  2. Authenticate the CLIs (one-time, interactive):"
 echo "     claude          # Follow OAuth flow for Claude Max"
 echo "     codex auth      # Follow OAuth flow for OpenAI"
+echo "     gemini          # Follow the login flow for Gemini"
 echo ""
 echo "  3. Configure env:"
 echo "     cp .env.example .env"
