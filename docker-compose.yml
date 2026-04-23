@@ -5,9 +5,11 @@ services:
       - "${PORT:-3456}:3456"
     env_file: .env
     volumes:
-      # Persist CLI auth tokens across container restarts
-      - claude-auth:/home/bridge/.claude
-      - codex-auth:/home/bridge/.config
+      # Share host CLI auth (host UID 1000 == container bun UID 1000)
+      # Caveat: avoid running host CLI + container CLI concurrently (shared state files).
+      - ${HOME}/.claude:/home/bun/.claude
+      - ${HOME}/.codex:/home/bun/.codex
+      - ${HOME}/.gemini:/home/bun/.gemini
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "bun", "-e", "fetch('http://localhost:3456/health').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"]
@@ -16,6 +18,3 @@ services:
       retries: 3
       start_period: 10s
 
-volumes:
-  claude-auth:
-  codex-auth:

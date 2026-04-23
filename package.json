@@ -1,44 +1,47 @@
 {
-  "name": "ai-cli-bridge",
-  "version": "1.0.0",
-  "description": "HTTP bridge server for CLI-based AI providers (Claude Code, Codex). Use your Max/Pro subscriptions as an API.",
-  "license": "MIT",
-  "author": "Shreyas Dayal",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Shreyas-Dayal/ai-cli-bridge"
-  },
-  "homepage": "https://github.com/Shreyas-Dayal/ai-cli-bridge",
-  "bugs": {
-    "url": "https://github.com/Shreyas-Dayal/ai-cli-bridge/issues"
-  },
-  "keywords": [
-    "claude",
-    "openai",
-    "codex",
-    "cli-bridge",
-    "api-wrapper",
-    "ai",
-    "subscription"
-  ],
-  "engines": {
-    "bun": ">=1.2.0"
-  },
-  "type": "module",
-  "scripts": {
-    "start": "bun src/server.ts",
-    "dev": "bun --watch src/server.ts",
-    "build": "tsc",
-    "start:prod": "bun dist/server.js"
-  },
-  "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.21.0",
-    "express-rate-limit": "^7.5.0"
-  },
-  "devDependencies": {
-    "@types/cors": "^2.8.17",
-    "@types/express": "^4.17.21",
-    "typescript": "^5.6.0"
-  }
+	"name": "ai-cli-bridge",
+	"version": "1.0.0",
+	"description": "HTTP bridge server for CLI-based AI providers (Claude Code, Codex, Gemini). Use your subscriptions as an API.",
+	"license": "MIT",
+	"author": "Shreyas Dayal",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/Shreyas-Dayal/ai-cli-bridge"
+	},
+	"homepage": "https://github.com/Shreyas-Dayal/ai-cli-bridge",
+	"bugs": {
+		"url": "https://github.com/Shreyas-Dayal/ai-cli-bridge/issues"
+	},
+	"keywords": [
+		"claude",
+		"openai",
+		"codex",
+		"gemini",
+		"cli-bridge",
+		"api-wrapper",
+		"ai",
+		"subscription"
+	],
+	"engines": {
+		"bun": ">=1.2.0"
+	},
+	"type": "module",
+	"scripts": {
+		"start": "bun src/server.ts",
+		"dev": "bun --watch src/server.ts",
+		"build": "tsc",
+		"test": "bun test",
+		"start:prod": "bun dist/server.js"
+	},
+	"dependencies": {
+		"cors": "^2.8.5",
+		"express": "^4.21.0",
+		"express-rate-limit": "^7.5.0"
+	},
+	"devDependencies": {
+		"@types/cors": "^2.8.17",
+		"@types/express": "^4.17.21",
+		"@types/node": "^24.8.1",
+		"typescript": "^5.6.0"
+	}
 }

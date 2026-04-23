@@ -82,6 +82,7 @@ When generation requests start failing due to expired tokens:
 ssh <YOUR_SERVER>
 claude        # Follow the OAuth URL for Claude
 codex auth    # Follow the OAuth URL for Codex
+gemini        # Follow the login flow for Gemini
 # No server restart needed — CLIs read fresh tokens each invocation
 ```
 
