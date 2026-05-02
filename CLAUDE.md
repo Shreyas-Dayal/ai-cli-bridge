@@ -2,7 +2,7 @@
 
 ## What This Is
 
-HTTP bridge server wrapping Claude Code CLI and Codex CLI behind an Express API. Uses Max/Pro subscriptions instead of per-token API keys. Designed to deploy on any VPS behind a reverse proxy or Cloudflare Tunnel.
+HTTP bridge server wrapping Claude Code CLI, Codex CLI, and Opencode CLI behind an Express API. Uses Max/Pro subscriptions (Claude/Codex) or `opencode auth` credentials (Opencode) instead of per-token API keys. Designed to deploy on any VPS behind a reverse proxy or Cloudflare Tunnel.
 
 ## Stack
 
@@ -25,6 +25,7 @@ src/
   providers/
     claude.ts         — Claude Code CLI wrapper (execFile + spawn for streaming)
     codex.ts          — Codex CLI wrapper (execFile + spawn for streaming)
+    opencode.ts       — Opencode CLI wrapper (temp opencode.json + sandboxed bridge agent)
 public/
   admin.html          — Dashboard markup
   admin.css           — Dashboard styles
@@ -58,7 +59,8 @@ See `DEPLOY.md` for full reference.
 ## Architecture
 
 - **CLI wrapping:** `execFile()` spawns CLI for non-streaming, `spawn()` for streaming. Both use array args (no shell injection).
-- **Endpoint-based routing:** `/generate` → Claude CLI, `/generate-codex` → Codex CLI. Both support `stream: true` for SSE responses.
+- **Endpoint-based routing:** `/generate` → Claude CLI, `/generate-codex` → Codex CLI, `/generate-opencode` → Opencode CLI. All support `stream: true` for SSE responses.
+- **Opencode sandboxing:** per request, a temp dir holding an `opencode.json` defines a `bridge` agent that injects the caller's systemPrompt and disables write/edit/bash/patch/task/todo/web tools. The temp dir is removed after the response.
 - **Auth:** SHA-256 hashed keys with `crypto.timingSafeEqual`. Raw keys never stored — shown once at creation. `req.keyHash` on request object, never `req.rawKey`.
 - **Limits:** Per-key: requests/day, requests/month, tokens/month, cost/day, cost/month. All default 0 (unlimited).
 - **Usage tracking:** In-memory with 30s dirty-flag flush to disk. Daily entries pruned >90 days, monthly >12 months.
@@ -72,7 +74,7 @@ See `DEPLOY.md` for full reference.
 - **Error handling:** Detailed errors logged server-side, generic `"Generation failed"` returned to clients.
 - **Trust proxy:** `app.set('trust proxy', 1)` — required for rate limiting behind Cloudflare Tunnel.
 - **Graceful shutdown:** SIGTERM/SIGINT flush dirty usage + logs to disk.
-- **Cost in Codex:** Estimated from hardcoded pricing table (not returned by CLI). Claude CLI returns `total_cost_usd`.
+- **Cost in Codex:** Estimated from hardcoded pricing table (not returned by CLI). Claude CLI returns `total_cost_usd`. Opencode CLI returns cost directly in `step_finish.part.cost`.
 
 ## TypeScript Notes
 
@@ -96,6 +98,7 @@ See `DEPLOY.md` for full reference.
 **User** (Bearer user-key):
 - `POST /generate` — Claude Code CLI (`stream: true` for SSE)
 - `POST /generate-codex` — Codex CLI (`stream: true` for SSE)
+- `POST /generate-opencode` — Opencode CLI (`stream: true` for SSE). Operator must run `opencode auth login <provider>` once on the host before this works.
 - `GET /health` — No auth
 
 **Admin** (Bearer admin-key):
