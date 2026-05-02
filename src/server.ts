@@ -7,6 +7,7 @@ import { KeyManager } from './keys.js';
 import { keyAuthMiddleware, adminAuthMiddleware } from './middleware/auth.js';
 import { generateWithClaude, streamWithClaude } from './providers/claude.js';
 import { generateWithCodex, streamWithCodex } from './providers/codex.js';
+import { generateWithOpencode, streamWithOpencode } from './providers/opencode.js';
 import { initSSE, sendSSEEvent, sendSSEError, sendSSEDone } from './utils/sse.js';
 
 const app = express();
@@ -428,6 +429,100 @@ app.post('/generate-codex', async (req, res) => {
   }
 });
 
+// Opencode CLI (supports stream: true)
+app.post('/generate-opencode', async (req, res) => {
+  const validation = validateGenerateBody(req.body);
+  if (validation.error) {
+    res.status(400).json({ error: validation.error });
+    return;
+  }
+
+  const { systemPrompt, userPrompt, model, stream } = req.body;
+
+  if (stream) {
+    // ── Streaming response (SSE) ──
+    initSSE(res);
+
+    const handle = streamWithOpencode(
+      { systemPrompt, userPrompt, model },
+      {
+        defaultModel: config.opencodeDefaultModel,
+        timeoutMs: config.opencodeTimeoutMs,
+        maxBuffer: config.opencodeMaxBuffer,
+      },
+      {
+        onText: (chunk) => {
+          sendSSEEvent(res, 'text', { text: chunk });
+        },
+        onUsage: (usage, costUsd) => {
+          if (req.keyHash) {
+            keyManager.recordUsage(req.keyHash, usage.input_tokens, usage.output_tokens, costUsd);
+          }
+          const usedModel = model || config.opencodeDefaultModel;
+          keyManager.logRequest({
+            keyName: req.keyName || 'anonymous',
+            provider: 'opencode',
+            model: usedModel,
+            systemPrompt,
+            userPrompt,
+            inputTokens: usage.input_tokens,
+            outputTokens: usage.output_tokens,
+            costUsd,
+            durationMs: 0,
+          });
+          logRequest('Opencode', usedModel, req.keyName, usage, costUsd);
+          sendSSEEvent(res, 'usage', { usage, cost_usd: costUsd });
+        },
+        onError: (err) => {
+          console.error('[generate-opencode] Opencode streaming error:', err.message);
+          sendSSEError(res, 'Generation failed');
+        },
+        onDone: () => {
+          sendSSEDone(res);
+        },
+      }
+    );
+
+    req.on('close', () => handle.kill());
+    return;
+  }
+
+  // ── Non-streaming response (JSON) ──
+  try {
+    const result = await generateWithOpencode(
+      { systemPrompt, userPrompt, model },
+      {
+        defaultModel: config.opencodeDefaultModel,
+        timeoutMs: config.opencodeTimeoutMs,
+        maxBuffer: config.opencodeMaxBuffer,
+      }
+    );
+
+    if (req.keyHash) {
+      keyManager.recordUsage(req.keyHash, result.usage.input_tokens, result.usage.output_tokens, result.cost_usd);
+    }
+
+    const usedModel = model || config.opencodeDefaultModel;
+    keyManager.logRequest({
+      keyName: req.keyName || 'anonymous',
+      provider: 'opencode',
+      model: usedModel,
+      systemPrompt,
+      userPrompt,
+      inputTokens: result.usage.input_tokens,
+      outputTokens: result.usage.output_tokens,
+      costUsd: result.cost_usd,
+      durationMs: 0,
+    });
+
+    logRequest('Opencode', usedModel, req.keyName, result.usage, result.cost_usd);
+    res.json(result);
+  } catch (err) {
+    console.error('[generate-opencode] Opencode generation error:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Generation failed' });
+  }
+});
+
 // ── Start ────────────────────────────────────────────────────────────────────
 
 app.listen(config.port, () => {
@@ -439,6 +534,7 @@ app.listen(config.port, () => {
   console.log('  Endpoints:');
   console.log('    POST /generate          — Claude Code CLI (stream: true for SSE)');
   console.log('    POST /generate-codex    — Codex CLI (stream: true for SSE)');
+  console.log('    POST /generate-opencode — Opencode CLI (stream: true for SSE)');
   console.log('    GET  /health            — Health check');
   console.log('  Admin:');
   console.log('    GET    /admin/keys          — List keys + usage');
