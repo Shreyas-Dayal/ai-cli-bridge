@@ -40,6 +40,11 @@ export const config = {
   codexDefaultModel: process.env.CODEX_DEFAULT_MODEL || 'gpt-5.3-codex',
   codexTimeoutMs: requireInt('CODEX_TIMEOUT_MS', '180000', 1000),
   codexMaxBuffer: requireInt('CODEX_MAX_BUFFER_BYTES', '10485760', 1024),
+
+  // Opencode CLI
+  opencodeDefaultModel: process.env.OPENCODE_DEFAULT_MODEL || 'anthropic/claude-sonnet-4-20250514',
+  opencodeTimeoutMs: requireInt('OPENCODE_TIMEOUT_MS', '180000', 1000),
+  opencodeMaxBuffer: requireInt('OPENCODE_MAX_BUFFER_BYTES', '10485760', 1024),
 };
 
 if (!config.adminKey) {
